@@ -438,6 +438,12 @@ export const categories = [
         subtitle: 'Make form fields and annotations non-editable.',
       },
       {
+        id: 'flatten-as-image',
+        name: 'Flatten PDF as Image',
+        icon: 'layers',
+        subtitle: 'Convert all Pages as Image, usefull for signed PDF.',
+      },
+      {
         id: 'remove-metadata',
         name: 'Remove Metadata',
         icon: 'file-x',

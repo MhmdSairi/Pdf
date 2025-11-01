@@ -14,6 +14,7 @@ import { pdfToZip } from './pdf-to-zip.js';
 import { editMetadata } from './edit-metadata.js';
 import { removeMetadata } from './remove-metadata.js';
 import { flatten } from './flatten.js';
+import { flattenAsImage } from './flatten-as-image.js';
 import { pdfToPng } from './pdf-to-png.js';
 import { pngToPdf } from './png-to-pdf.js';
 import { pdfToWebp } from './pdf-to-webp.js';
@@ -84,6 +85,7 @@ export const toolLogic = {
   'edit-metadata': editMetadata,
   'remove-metadata': removeMetadata,
   flatten,
+  'flatten-as-image': flattenAsImage,
   'pdf-to-png': pdfToPng,
   'png-to-pdf': pngToPdf,
   'pdf-to-webp': pdfToWebp,

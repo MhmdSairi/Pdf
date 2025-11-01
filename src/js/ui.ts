@@ -701,6 +701,13 @@ export const toolTemplates = {
         <div id="file-display-area" class="mt-4 space-y-2"></div>
         <button id="process-btn" class="hidden mt-6 btn-gradient w-full">Flatten PDF</button>
     `,
+  'flatten-as-image': () => `
+        <h2 class="text-2xl font-bold text-white mb-4">Flatten PDF as Image</h2>
+        <p class="mb-6 text-gray-400">Convert PDF Pages to Images, usefull for signed PDF.</p>
+        ${createFileInputHTML()}
+        <div id="file-display-area" class="mt-4 space-y-2"></div>
+        <button id="process-btn" class="hidden mt-6 btn-gradient w-full">Flatten PDF as Image</button>
+    `,
   'pdf-to-png': () => `
         <h2 class="text-2xl font-bold text-white mb-4">PDF to PNG</h2>
         <p class="mb-6 text-gray-400">Convert each page of a PDF file into a high-quality PNG image.</p>
