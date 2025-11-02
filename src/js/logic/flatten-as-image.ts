@@ -1,20 +1,49 @@
 import { showLoader, hideLoader, showAlert } from '../ui.js';
-import { downloadFile } from '../utils/helpers.js';
+import { downloadFile, readFileAsArrayBuffer } from '../utils/helpers.js';
 import { state } from '../state.js';
+import { PDFDocument as PDFLibDocument } from 'pdf-lib';
 
-export function doImageConvertAndFlatten(pdfDoc) {
+async function doImageConvertAndFlatten(pdf, newPdf) {
+  const totalPages = pdf.numPages;
+  for (let i = 1; i <= totalPages; i++) {
+    showLoader(`Processing page ${i} of ${totalPages}...`);
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2.0 });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+
+    await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+    const blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, 'image/png')
+    );
+    const arrayBuffer = await blob.arrayBuffer();
+    const jpgImage = await newPdf.embedPng(new Uint8Array(arrayBuffer));
+    const pdfPage = newPdf.addPage([jpgImage.width, jpgImage.height]);
+    pdfPage.drawImage(jpgImage, {
+        x: 0,
+        y: 0,
+        width: jpgImage.width,
+        height: jpgImage.height,
+    });
+ 
+  }
 }
 
 export async function flattenAsImage() {
-  if (!state.pdfDoc) {
-    showAlert('Error', 'PDF not loaded.');
-    return;
-  }
   showLoader('Flattening/Converting PDF...');
   try {
-    doImageConvertAndFlatten(state.pdfDoc);
+    // @ts-expect-error TS(2304) FIXME: Cannot find name 'pdfjsLib'.
+    const pdf = await pdfjsLib.getDocument(
+      await readFileAsArrayBuffer(state.files[0])
+    ).promise;
+  
+    const pdfDoc = await PDFLibDocument.create();
+    await doImageConvertAndFlatten(pdf, pdfDoc);
 
-    const flattenedBytes = await state.pdfDoc.save();
+    const flattenedBytes = await pdfDoc.save();
     downloadFile(
       new Blob([flattenedBytes], { type: 'application/pdf' }),
       'flattened-as-image.pdf'
