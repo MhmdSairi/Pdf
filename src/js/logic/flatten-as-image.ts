@@ -43,7 +43,7 @@ export async function flattenAsImage() {
     const pdfDoc = await PDFLibDocument.create();
     await doImageConvertAndFlatten(pdf, pdfDoc);
 
-    const flattenedBytes = await pdfDoc.save();
+    const flattenedBytes : Uint8Array = await pdfDoc.save();
     downloadFile(
       new Blob([flattenedBytes], { type: 'application/pdf' }),
       'flattened-as-image.pdf'
