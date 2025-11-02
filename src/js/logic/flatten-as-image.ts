@@ -16,11 +16,11 @@ async function doImageConvertAndFlatten(pdf, newPdf) {
 
     await page.render({ canvasContext: context, viewport: viewport }).promise;
 
-    const blob = await new Promise((resolve) =>
-      canvas.toBlob(resolve, 'image/png')
+    const blob = await new Promise<Blob>((resolve) =>
+      canvas.toBlob((b) => resolve(b!), 'image/png', 0.95)
     );
     const arrayBuffer = await blob.arrayBuffer();
-    const jpgImage = await newPdf.embedPng(new Uint8Array(arrayBuffer));
+    const jpgImage = await newPdf.embedPng(arrayBuffer);
     const pdfPage = newPdf.addPage([jpgImage.width, jpgImage.height]);
     pdfPage.drawImage(jpgImage, {
         x: 0,
