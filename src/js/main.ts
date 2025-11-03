@@ -252,10 +252,4 @@ const init = () => {
   console.log('Please share our tool and share the love!');
 };
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js');
-  });
-}
-
 document.addEventListener('DOMContentLoaded', init);
