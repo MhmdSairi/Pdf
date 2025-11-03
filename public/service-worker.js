@@ -11,6 +11,7 @@ const OFFLINE_URLS = [
   '/images/favicon.png',
   '/images/favicon.svg',
   '/manifest.json',
+  '/favicon.ico',
   // Add more assets if needed
 ];
 
