@@ -10,6 +10,7 @@ const OFFLINE_URLS = [
   '/qpdf.wasm',
   '/images/favicon.png',
   '/images/favicon.svg',
+  '/manifest.json',
   // Add more assets if needed
 ];
 
