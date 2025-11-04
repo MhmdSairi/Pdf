@@ -251,9 +251,8 @@ const createFileInputHTML = (options = {}) => {
             <input id="file-input" type="file" class="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer" ${multiple} accept="${acceptedFiles}">
         </div>
         
-        ${
-          showControls
-            ? `
+        ${showControls
+      ? `
             <!-- NEW: Add control buttons for multi-file uploads -->
             <div id="file-controls" class="hidden mt-4 flex gap-3">
                 <button id="add-more-btn" class="btn bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-lg flex items-center gap-2">
@@ -264,8 +263,8 @@ const createFileInputHTML = (options = {}) => {
                 </button>
             </div>
         `
-            : ''
-        }
+      : ''
+    }
     `;
 };
 
@@ -1034,8 +1033,6 @@ export const toolTemplates = {
         <h2 class="text-2xl font-bold text-white mb-4">HTML to PDF</h2>
         <p class="mb-6 text-gray-400">Type or paste your text below and convert it to a PDF with custom formatting.</p>
         <div id="html-to-pdf-container" class="h-full"></div>
-        
-        <button id="process-btn" class="btn-gradient w-full mt-6">Create PDF</button>
     `,
   'invert-colors': () => `
         <h2 class="text-2xl font-bold text-white mb-4">Invert PDF Colors</h2>
@@ -1473,15 +1470,15 @@ export const toolTemplates = {
                 <input type="text" id="lang-search" class="w-full bg-gray-900 border border-gray-600 text-white rounded-lg p-2.5 mb-2" placeholder="Search for languages...">
                 <div id="lang-list" class="max-h-48 overflow-y-auto border border-gray-600 rounded-lg p-2 bg-gray-900">
                     ${Object.entries(tesseractLanguages)
-                      .map(
-                        ([code, name]) => `
+      .map(
+        ([code, name]) => `
                         <label class="flex items-center gap-2 p-2 rounded-md hover:bg-gray-700 cursor-pointer">
                             <input type="checkbox" value="${code}" class="lang-checkbox w-4 h-4 rounded text-indigo-600 bg-gray-700 border-gray-600 focus:ring-indigo-500">
                             ${name}
                         </label>
                     `
-                      )
-                      .join('')}
+      )
+      .join('')}
                 </div>
             </div>
              <p class="text-xs text-gray-500 mt-1">Selected: <span id="selected-langs-display" class="font-semibold">None</span></p>
