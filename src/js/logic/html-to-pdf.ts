@@ -2,14 +2,12 @@ import { showLoader, hideLoader, showAlert } from '../ui.js';
 import { downloadFile } from '../utils/helpers.js';
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
+import { pdfExporter } from 'quill-to-pdf';
 
 let quill: Quill;
 
-import { pdfExporter } from 'quill-to-pdf';
-
 async function generateTextPDF() {
   const delta = quill.getContents();
-
   try {
     // This is async! Must await
     const pdfBlob: Blob = await pdfExporter.generatePdf(delta);
