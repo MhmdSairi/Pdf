@@ -22,7 +22,7 @@ export default defineConfig(({ mode }) => ({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,woff,json,wasm}'],
         navigateFallback: '/index.html',
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB for large JS bundles
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 5MB for large JS bundles
       },
     }),
   ],
