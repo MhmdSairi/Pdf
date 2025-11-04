@@ -1,8 +1,7 @@
 import { showLoader, hideLoader, showAlert } from '../ui.js';
-import { downloadFile, hexToRgb } from '../utils/helpers.js';
 import Quill from 'quill';
+import { jsPDF } from 'jspdf';
 import 'quill/dist/quill.snow.css';
-import html2pdf from 'html2pdf.js';
 
 import {
   PDFDocument as PDFLibDocument,
@@ -11,28 +10,104 @@ import {
   PageSizes,
 } from 'pdf-lib';
 
+let quill: Quill;
+
+function generateTextPDF() {
+  const doc = new jsPDF({
+    unit: 'mm',
+    format: 'a4',
+    orientation: 'portrait',
+  });
+
+  // Page dimensions
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const maxWidth = pageWidth - 2 * margin;
+
+  let y = margin; // Current Y position
+  const lineHeight = 7; // Approx in mm
+
+  // Extract Delta (rich text structure)
+  const delta = quill.getContents();
+
+  // Process each operation
+  delta.ops.forEach((op: any) => {
+    if (typeof op.insert === 'string') {
+      const text = op.insert;
+      const attributes = op.attributes || {};
+
+      // Split by line
+      const lines = text.split('\n');
+      lines.forEach((line, i) => {
+        if (i > 0) {
+          y += lineHeight;
+          if (y > pageHeight - margin) {
+            doc.addPage();
+            y = margin;
+          }
+        }
+
+        if (!line) return;
+
+        // Apply styles
+        doc.setFont('helvetica',
+          attributes.bold && attributes.italic ? 'bolditalic' :
+            attributes.bold ? 'bold' :
+              attributes.italic ? 'italic' :
+                'normal'
+        );
+
+        // Font size
+        let fontSize = 12;
+        if (attributes.header === 1) fontSize = 18;
+        else if (attributes.header === 2) fontSize = 16;
+        else if (attributes.header === 3) fontSize = 14;
+        doc.setFontSize(fontSize);
+
+        // Color (avoid oklch!)
+        if (attributes.color && !attributes.color.includes('oklch')) {
+          const hex = attributes.color;
+          doc.setTextColor(hex);
+        } else {
+          doc.setTextColor(0, 0, 0); // black
+        }
+
+        // Indentation for lists
+        let x = margin;
+        if (attributes.list === 'bullet') {
+          doc.setFontSize(12);
+          doc.text('• ', x, y);
+          x += 5;
+        } else if (attributes.list === 'ordered') {
+          const index = quill.getLines().indexOf(quill.getLine(quill.getLength() - 1)[0]) + 1;
+          doc.text(`${index}. `, x, y);
+          x += 8;
+        } else if (attributes.indent) {
+          x += attributes.indent * 10;
+        }
+
+        // Draw text
+        doc.setFontSize(fontSize);
+        const splitText = doc.splitTextToSize(line, maxWidth - (x - margin));
+        doc.text(splitText, x, y);
+
+        y += lineHeight * splitText.length;
+
+        // Reset color
+        doc.setTextColor(0, 0, 0);
+      });
+    }
+  });
+
+  // Save
+  doc.save(`htmlToPdf-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
 export async function htmlToPdf() {
   showLoader('Creating PDF...');
   try {
-/*
-
-    const pdfDoc = await PDFLibDocument.create();
-    const pageSize = PageSizes[pageSizeKey];
-    const margin = 72; // 1 inch
-
-    let page = pdfDoc.addPage(pageSize);
-    let { width, height } = page.getSize();
-    const textWidth = width - margin * 2;
-    const lineHeight = fontSize * 1.3;
-    let y = height - margin;
-
-
-    const pdfBytes = await pdfDoc.save();
-    downloadFile(
-      new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' }),
-      'text-document.pdf'
-    );
-*/
+    generateTextPDF();
   } catch (e) {
     console.error(e);
     showAlert('Error', 'Failed to create PDF from text.');
@@ -41,17 +116,29 @@ export async function htmlToPdf() {
   }
 }
 
+function usePrintToPdf() {
+
+  const printWindow = window.open('', '_blank');
+  printWindow?.document.write(`
+    <html>
+      <head><title>Print</title></head>
+      <body style="margin:15mm; font-family:Arial;">
+        ${quill.root.innerHTML}
+      </body>
+    </html>
+  `);
+  printWindow?.document.close();
+  printWindow?.print();
+}
 
 export function mountHtmlToPdfTool() {
-  console.log('mountHtmlToPdfTool');
   const container = document.querySelector('#html-to-pdf-container');
   if (!container) return;
 
   container.innerHTML = `
-    <div class="grid grid-cols-1 md:grid-cols-2 h-screen bg-gray-50">
+    <div class="">
       <!-- Editor -->
       <div class="p-6 flex flex-col">
-        <h2 class="text-2xl font-bold mb-4 text-gray-800">Edit</h2>
         <div id="toolbar" class="mb-2">
           <select class="ql-header" title="Heading">
             <option value="1">H1</option><option value="2">H2</option><option selected></option>
@@ -66,51 +153,20 @@ export function mountHtmlToPdfTool() {
           <button class="ql-clean" title="Clear Format"></button>
         </div>
         <div id="editor" class="bg-white flex-1 border-2 border-gray-300 rounded-lg overflow-hidden"></div>
-        <button id="download" class="mt-4 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:shadow-lg transition">
-          ↓ Download PDF (A4)
-        </button>
-      </div>
-
-      <!-- Preview -->
-      <div class="p-6 flex flex-col">
-        <h2 class="text-2xl font-bold mb-4 text-gray-800">Live Preview</h2>
-        <div id="preview" class="bg-white flex-1 border-2 border-gray-300 rounded-lg p-8 overflow-auto prose max-w-none"></div>
-      </div>
-    </div>
+     </div>
+  </div>
+  <div>
+    <button id="print-to-pdf" class="btn-gradient w-full mt-6">Use Browser print function</button>
+  </div> 
   `;
 
-  const quill = new Quill('#editor', {
+  quill = new Quill('#editor', {
     theme: 'snow',
     modules: { toolbar: '#toolbar' },
     placeholder: 'Start typing your document…',
   });
 
-  const preview = container.querySelector('#preview') as HTMLElement;
-
-  // Sync editor → preview
-  quill.on('text-change', () => {
-    preview.innerHTML = quill.root.innerHTML;
-  });
-  preview.innerHTML = quill.root.innerHTML; // initial
-
-  // PDF export
-  container.querySelector('#download')!.addEventListener('click', () => {
-    const clone = preview.cloneNode(true) as HTMLElement;
-    clone.style.width = '210mm';
-    clone.style.minHeight = '297mm';
-    clone.style.padding = '15mm';
-    clone.style.boxSizing = 'border-box';
-    clone.style.background = 'white';
-
-    html2pdf()
-      .set({
-        margin: 0,
-        filename: `bento-${new Date().toISOString().slice(0, 10)}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      })
-      .from(clone)
-      .save();
+  document.querySelector('#print-to-pdf')?.addEventListener('click', () => {
+    usePrintToPdf();
   });
 }
