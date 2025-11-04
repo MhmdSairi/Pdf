@@ -28,6 +28,7 @@ import { imageToPdf } from './image-to-pdf.js';
 import { changePermissions } from './change-permissions.js';
 import { pdfToMarkdown } from './pdf-to-markdown.js';
 import { txtToPdf } from './txt-to-pdf.js';
+import { htmlToPdf, mountHtmlToPdfTool } from './html-to-pdf.js';
 import { invertColors } from './invert-colors.js';
 // import { viewMetadata } from './view-metadata.js';
 import { reversePages } from './reverse-pages.js';
@@ -99,6 +100,7 @@ export const toolLogic = {
   'change-permissions': changePermissions,
   'pdf-to-markdown': pdfToMarkdown,
   'txt-to-pdf': txtToPdf,
+  'html-to-pdf': { process: htmlToPdf, setup: mountHtmlToPdfTool },
   'invert-colors': invertColors,
   'reverse-pages': reversePages,
   // 'md-to-pdf': mdToPdf,

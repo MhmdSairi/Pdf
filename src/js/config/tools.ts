@@ -202,6 +202,12 @@ export const categories = [
         icon: 'file-pen',
         subtitle: 'Convert a plain text file into a PDF.',
       },
+      {
+        id: 'html-to-pdf',
+        name: 'HTML to PDF',
+        icon: 'file-pen',
+        subtitle: 'Convert a HTML into a PDF.',
+      },
       // { id: 'md-to-pdf', name: 'Markdown to PDF', icon: 'file-text', subtitle: 'Convert a Markdown file into a PDF.' },
       // { id: 'scan-to-pdf', name: 'Scan to PDF', icon: 'camera', subtitle: 'Use your camera to create a scanned PDF.' },
       // { id: 'word-to-pdf', name: 'Word to PDF', icon: 'file-text', subtitle: 'Convert .docx documents to PDF.' },
