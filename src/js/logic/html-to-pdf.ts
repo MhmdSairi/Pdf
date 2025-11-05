@@ -64,6 +64,45 @@ function extractAndProcessHtmlContent(): string {
   return htmlContent;
 }
 
+async function loadImageAsBase64(src: string): Promise<{ data: string; width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    img.onload = function() {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+
+        const dataURL = canvas.toDataURL('image/jpeg', 0.8);
+        resolve({
+          data: dataURL,
+          width: img.width,
+          height: img.height
+        });
+      } catch (error) {
+        console.warn('Error converting image to base64:', error);
+        resolve(null);
+      }
+    };
+
+    img.onerror = function() {
+      console.warn('Error loading image:', src);
+      resolve(null);
+    };
+
+    img.src = src;
+  });
+}
+
 async function generateAdvancedTextPdf() {
   try {
     const { jsPDF } = await import('jspdf');
@@ -123,6 +162,26 @@ async function generateAdvancedTextPdf() {
           for (const segment of block.segments) {
             const attrs = segment.attributes || {};
 
+            if (segment.type === 'image') {
+              // Handle images - try to load and embed, fallback to placeholder
+              try {
+                // Store image info for processing after text
+                if (!block.images) block.images = [];
+                block.images.push({
+                  src: segment.src,
+                  position: lineText.length
+                });
+              } catch (error) {
+                lineText += '[IMAGE: Error loading]';
+              }
+              continue;
+            } else if (segment.type === 'link') {
+              // Handle links
+              lineText += `[LINK: ${segment.url}]`;
+              continue;
+            }
+
+            // Handle regular text segments
             // Set font style based on attributes
             let fontStyle = 'normal';
             if (attrs.bold && attrs.italic) fontStyle = 'bolditalic';
@@ -162,7 +221,22 @@ async function generateAdvancedTextPdf() {
               pdf.setTextColor(0, 0, 0);
             }
 
-            lineText += segment.text;
+            // Handle link formatting (underline and blue color)
+            if (attrs.link) {
+              pdf.setTextColor(0, 102, 204); // Blue color for links
+              const linkText = segment.text || attrs.link;
+              lineText += linkText;
+
+              // Store link info for later processing (after we know the position)
+              if (!block.links) block.links = [];
+              block.links.push({
+                text: linkText,
+                url: attrs.link,
+                startIndex: lineText.length - linkText.length
+              });
+            } else {
+              lineText += segment.text || '';
+            }
           }
 
           // Handle different block types with visual indicators
@@ -219,6 +293,66 @@ async function generateAdvancedTextPdf() {
                                alignment === 'right' ? 'right' : 'left';
 
             pdf.text(textLines, currentX, currentY, { align: alignOption });
+
+            // Process inline images if any
+            if (block.images && block.images.length > 0) {
+              for (const image of block.images) {
+                try {
+                  const imageData = await loadImageAsBase64(image.src);
+                  if (imageData) {
+                    // Add image after the text
+                    currentY += 5; // Small spacing
+
+                    const maxInlineImageWidth = maxWidth / 2; // Smaller for inline images
+                    const maxInlineImageHeight = 50;
+
+                    let imgWidth = imageData.width * 0.264583;
+                    let imgHeight = imageData.height * 0.264583;
+
+                    if (imgWidth > maxInlineImageWidth) {
+                      const ratio = maxInlineImageWidth / imgWidth;
+                      imgWidth = maxInlineImageWidth;
+                      imgHeight *= ratio;
+                    }
+
+                    if (imgHeight > maxInlineImageHeight) {
+                      const ratio = maxInlineImageHeight / imgHeight;
+                      imgHeight = maxInlineImageHeight;
+                      imgWidth *= ratio;
+                    }
+
+                    if (currentY + imgHeight > pageHeight - margin) {
+                      pdf.addPage();
+                      currentY = margin;
+                    }
+
+                    pdf.addImage(imageData.data, 'JPEG', margin, currentY, imgWidth, imgHeight);
+                    currentY += imgHeight + 5;
+                  }
+                } catch (error) {
+                  console.warn('Error processing inline image:', error);
+                }
+              }
+            }
+
+            // Add clickable links if any
+            if (block.links && block.links.length > 0) {
+              for (const link of block.links) {
+                try {
+                  // Calculate approximate link position (this is simplified)
+                  const linkY = currentY;
+                  const linkX = currentX;
+                  const linkWidth = pdf.getTextWidth(link.text);
+                  const linkHeight = lineHeight;
+
+                  // Add clickable link
+                  pdf.link(linkX, linkY - linkHeight, linkWidth, linkHeight, { url: link.url });
+                } catch (error) {
+                  console.warn('Error adding link to PDF:', error);
+                }
+              }
+            }
+
             currentY += textLines.length * lineHeight + paragraphSpacing;
           }
           break;
@@ -234,7 +368,7 @@ async function generateAdvancedTextPdf() {
             lastListType = block.type + (block.ordered ? 'ordered' : 'unordered');
           }
 
-          const listText = block.segments.map((seg: any) => seg.text).join('');
+          const listText = block.segments.map((seg: any) => seg.text || (seg.type === 'image' ? '[IMAGE]' : seg.type === 'link' ? `[${seg.url}]` : '')).join('');
           let bullet;
           if (block.ordered) {
             bullet = `${currentListNumber}. `;
@@ -246,6 +380,64 @@ async function generateAdvancedTextPdf() {
           const listLines = pdf.splitTextToSize(bullet + listText, maxWidth - 15);
           pdf.text(listLines, margin + 10, currentY);
           currentY += listLines.length * lineHeight + 3;
+          break;
+
+        case 'image':
+          // Handle standalone images
+          try {
+            const imageSegment = block.segments.find((seg: any) => seg.type === 'image');
+            if (imageSegment && imageSegment.src) {
+              // Try to load and embed the actual image
+              const imageData = await loadImageAsBase64(imageSegment.src);
+
+              if (imageData) {
+                // Calculate image dimensions to fit within page margins
+                const maxImageWidth = maxWidth;
+                const maxImageHeight = 100; // Max height in mm
+
+                let imgWidth = imageData.width * 0.264583; // Convert pixels to mm (96 DPI)
+                let imgHeight = imageData.height * 0.264583;
+
+                // Scale down if too large
+                if (imgWidth > maxImageWidth) {
+                  const ratio = maxImageWidth / imgWidth;
+                  imgWidth = maxImageWidth;
+                  imgHeight *= ratio;
+                }
+
+                if (imgHeight > maxImageHeight) {
+                  const ratio = maxImageHeight / imgHeight;
+                  imgHeight = maxImageHeight;
+                  imgWidth *= ratio;
+                }
+
+                // Check if image fits on current page
+                if (currentY + imgHeight > pageHeight - margin) {
+                  pdf.addPage();
+                  currentY = margin;
+                }
+
+                // Add the image to PDF
+                pdf.addImage(imageData.data, 'JPEG', margin, currentY, imgWidth, imgHeight);
+                currentY += imgHeight + paragraphSpacing;
+              } else {
+                // Fallback to placeholder text
+                pdf.setFont('helvetica', 'italic');
+                pdf.setFontSize(10);
+                pdf.setTextColor(128, 128, 128);
+                pdf.text('[Image: Unable to load - ' + imageSegment.src + ']', margin, currentY);
+                currentY += lineHeight + paragraphSpacing;
+              }
+            }
+          } catch (error) {
+            console.warn('Error handling image in PDF:', error);
+            // Fallback to placeholder text
+            pdf.setFont('helvetica', 'italic');
+            pdf.setFontSize(10);
+            pdf.setTextColor(128, 128, 128);
+            pdf.text('[Image: Error loading]', margin, currentY);
+            currentY += lineHeight + paragraphSpacing;
+          }
           break;
 
       default:
@@ -336,6 +528,32 @@ function parseQuillDelta(delta: any): any[] {
         // Add text to current line
         currentLine.segments.push({
           text: text,
+          attributes: attrs
+        });
+      }
+    } else if (typeof op.insert === 'object') {
+      // Handle embeds like images, links, etc.
+      const insertObj = op.insert;
+      const attrs = op.attributes || {};
+
+      if (insertObj.image) {
+        // Handle image
+        currentLine.segments.push({
+          type: 'image',
+          src: insertObj.image,
+          attributes: attrs
+        });
+      } else if (insertObj.link) {
+        // Handle link (though links are usually attributes, not inserts)
+        currentLine.segments.push({
+          type: 'link',
+          url: insertObj.link,
+          attributes: attrs
+        });
+      } else {
+        // Handle other embeds as text placeholder
+        currentLine.segments.push({
+          text: '[Embed]',
           attributes: attrs
         });
       }
