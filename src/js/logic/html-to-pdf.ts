@@ -264,38 +264,49 @@ const renderImagePlaceholder = (pdf: any, message: string, currentY: number): nu
 };
 
 const renderBlockQuote = async (pdf: any, formattedSegments: any[], lineText: string, currentY: number, maxWidth: number, pageWidth: number): Promise<number> => {
-  const startX = PDF_CONSTANTS.MARGIN + 10;
-  const quoteWidth = maxWidth - 20;
-  const textLines = pdf.splitTextToSize(lineText, quoteWidth);
+  const boxStartX = PDF_CONSTANTS.MARGIN;
+  const textPadding = 10;
+  const textStartX = boxStartX + textPadding;
+  const availableTextWidth = maxWidth - (textPadding * 2); // Account for padding on both sides
+  const textLines = pdf.splitTextToSize(lineText, availableTextWidth);
   const blockHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 8;
+  const boxWidth = maxWidth; // Use full available width
 
-  // Draw background and border
+  // Draw background rectangle (starts at normal margin, not shifted right)
   pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.r, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.g, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.b);
-  pdf.rect(PDF_CONSTANTS.MARGIN + 5, currentY - 4, quoteWidth + 10, blockHeight, 'F');
+  pdf.rect(boxStartX, currentY - 4, boxWidth, blockHeight, 'F');
 
+  // Draw left border line (at the left edge of the box)
   pdf.setDrawColor(PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.r, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.g, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.b);
   pdf.setLineWidth(2);
-  pdf.line(PDF_CONSTANTS.MARGIN + 5, currentY - 4, PDF_CONSTANTS.MARGIN + 5, currentY - 4 + blockHeight);
+  pdf.line(boxStartX, currentY - 4, boxStartX, currentY - 4 + blockHeight);
 
-  await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, quoteWidth, 'left', 'blockquote', PDF_CONSTANTS.MARGIN, pageWidth);
+  // Render text inside the box with proper positioning (text starts inside the box boundaries)
+  await renderFormattedText(pdf, formattedSegments, lineText, textStartX, currentY, availableTextWidth, 'left', 'blockquote', PDF_CONSTANTS.MARGIN, pageWidth);
   return currentY + textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING + 4;
 };
 
 const renderCodeBlock = async (pdf: any, formattedSegments: any[], lineText: string, currentY: number, maxWidth: number, pageWidth: number): Promise<number> => {
-  const startX = PDF_CONSTANTS.MARGIN + 5;
-  const codeWidth = maxWidth - 10;
-  const textLines = pdf.splitTextToSize(lineText, codeWidth);
+  // Calculate consistent positioning
+  const boxMargin = PDF_CONSTANTS.MARGIN;
+  const textPadding = 8;
+  const textStartX = boxMargin + textPadding;
+  const availableTextWidth = maxWidth - (textPadding * 2); // Account for padding on both sides
+  const textLines = pdf.splitTextToSize(lineText, availableTextWidth);
   const blockHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 8;
+  const boxWidth = maxWidth;
 
-  // Draw background and border
+  // Draw background rectangle
   pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.r, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.g, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.b);
-  pdf.rect(PDF_CONSTANTS.MARGIN, currentY - 4, codeWidth + 10, blockHeight, 'F');
+  pdf.rect(boxMargin, currentY - 4, boxWidth, blockHeight, 'F');
 
+  // Draw border around the entire box
   pdf.setDrawColor(PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.r, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.g, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.b);
   pdf.setLineWidth(0.5);
-  pdf.rect(PDF_CONSTANTS.MARGIN, currentY - 4, codeWidth + 10, blockHeight, 'S');
+  pdf.rect(boxMargin, currentY - 4, boxWidth, blockHeight, 'S');
 
-  await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, codeWidth, 'left', 'code', PDF_CONSTANTS.MARGIN, pageWidth);
+  // Render text inside the box with proper positioning
+  await renderFormattedText(pdf, formattedSegments, lineText, textStartX, currentY, availableTextWidth, 'left', 'code', PDF_CONSTANTS.MARGIN, pageWidth);
   return currentY + textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING + 4;
 };
 
