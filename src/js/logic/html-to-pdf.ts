@@ -126,9 +126,21 @@ async function renderFormattedText(
   let currentY = startY;
 
   for (const segment of formattedSegments) {
-    // Set font properties
+    // Set font properties with script adjustments
+    let adjustedFontSize = segment.fontSize;
+    let yOffset = 0;
+
+    // Handle superscript and subscript with more distinct positioning
+    if (segment.script === 'super') {
+      adjustedFontSize = segment.fontSize * 0.7; // Smaller font for superscript
+      yOffset = -(segment.fontSize * 0.4); // Move up more
+    } else if (segment.script === 'sub') {
+      adjustedFontSize = segment.fontSize * 0.7; // Smaller font for subscript
+      yOffset = segment.fontSize * 0.25; // Move down more
+    }
+
     pdf.setFont(segment.fontFamily, segment.fontStyle);
-    pdf.setFontSize(segment.fontSize);
+    pdf.setFontSize(adjustedFontSize);
     pdf.setTextColor(segment.textColor.r, segment.textColor.g, segment.textColor.b);
 
     // Handle background color
@@ -156,12 +168,12 @@ async function renderFormattedText(
         renderX = pageWidth - margin - lineWidth;
       }
 
-      // Render text
-      pdf.text(line, renderX, currentY);
+      // Render text with script offset
+      pdf.text(line, renderX, currentY + yOffset);
 
       // Add underline if needed
       if (segment.underline) {
-        const underlineY = currentY + 1;
+        const underlineY = currentY + yOffset + 1;
         pdf.setDrawColor(segment.textColor.r, segment.textColor.g, segment.textColor.b);
         pdf.setLineWidth(0.2);
         pdf.line(renderX, underlineY, renderX + lineWidth, underlineY);
@@ -169,7 +181,7 @@ async function renderFormattedText(
 
       // Add strikethrough if needed
       if (segment.strike) {
-        const strikeY = currentY - (segment.fontSize * 0.1); // Half the font size in mm
+        const strikeY = currentY + yOffset - (adjustedFontSize * 0.1);
         pdf.setDrawColor(segment.textColor.r, segment.textColor.g, segment.textColor.b);
         pdf.setLineWidth(0.3); // Make line thicker for better visibility
         pdf.line(renderX, strikeY, renderX + lineWidth, strikeY);
@@ -355,6 +367,7 @@ async function generateAdvancedTextPdf() {
               backgroundColor,
               underline: attrs.underline || false,
               strike: attrs.strike || attrs.strikethrough || false,
+              script: attrs.script || null, // Add script attribute for super/sub
               startIndex: lineText.length,
               endIndex: lineText.length + segmentText.length
             });
