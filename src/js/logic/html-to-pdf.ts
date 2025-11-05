@@ -64,117 +64,136 @@ function extractAndProcessHtmlContent(): string {
   return htmlContent;
 }
 
-async function generatePdfFromHtml(htmlContent: string) {
-  // Create a temporary container for rendering
-  const tempContainer = document.createElement('div');
-  tempContainer.style.cssText = `
-    position: absolute;
-    top: -9999px;
-    left: -9999px;
-    width: 210mm;
-    padding: 20mm;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-    font-size: 12pt;
-    line-height: 1.6;
-    color: #333;
-    background: white;
-  `;
-
-  // Apply styles to the content
-  tempContainer.innerHTML = `
-    <style>
-      /* Headers */
-      h1 { font-size: 24pt; font-weight: bold; margin: 16pt 0 12pt 0; line-height: 1.3; }
-      h2 { font-size: 20pt; font-weight: bold; margin: 14pt 0 10pt 0; line-height: 1.3; }
-      h3 { font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt 0; line-height: 1.3; }
-      h4 { font-size: 16pt; font-weight: bold; margin: 10pt 0 6pt 0; line-height: 1.3; }
-      h5 { font-size: 14pt; font-weight: bold; margin: 8pt 0 6pt 0; line-height: 1.3; }
-      h6 { font-size: 13pt; font-weight: bold; margin: 8pt 0 6pt 0; line-height: 1.3; }
-      
-      /* Text formatting */
-      .ql-size-small, span[style*="font-size: 0.75em"] { font-size: 10pt !important; }
-      .ql-size-large, span[style*="font-size: 1.5em"] { font-size: 18pt !important; }
-      .ql-size-huge, span[style*="font-size: 2.5em"] { font-size: 32pt !important; }
-      
-      strong, b { font-weight: bold !important; }
-      em, i { font-style: italic !important; }
-      u { text-decoration: underline !important; }
-      s { text-decoration: line-through !important; }
-      
-      /* Text alignment */
-      .ql-align-center { text-align: center; }
-      .ql-align-right { text-align: right; }
-      .ql-align-justify { text-align: justify; }
-      
-      /* Lists */
-      ul, ol { margin: 8pt 0; padding-left: 20pt; }
-      li { margin: 4pt 0; }
-      
-      /* Blockquotes */
-      blockquote {
-        margin: 12pt 20pt;
-        padding: 8pt 16pt;
-        border-left: 4pt solid #ddd;
-        background: #f9f9f9;
-        font-style: italic;
-      }
-      
-      /* Code blocks */
-      pre, .ql-code-block {
-        background: #f5f5f5;
-        border: 1pt solid #ddd;
-        border-radius: 4pt;
-        padding: 12pt;
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 10pt;
-        margin: 8pt 0;
-      }
-      
-      p { margin: 6pt 0; }
-    </style>
-    <div class="content">${htmlContent}</div>
-  `;
-
-  document.body.appendChild(tempContainer);
-
+async function generateAdvancedTextPdf() {
   try {
-    // Import jsPDF dynamically
     const { jsPDF } = await import('jspdf');
-    const html2canvas = (await import('html2canvas')).default;
 
-    // Create PDF
+    // Create PDF with proper text rendering
     const pdf = new jsPDF('p', 'mm', 'a4');
-    const contentElement = tempContainer.querySelector('.content') as HTMLElement;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 20;
+    const maxWidth = pageWidth - (margin * 2);
 
-    if (contentElement) {
-      // Generate canvas from HTML
-      const canvas = await html2canvas(contentElement, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        width: contentElement.scrollWidth,
-        height: contentElement.scrollHeight
-      });
+    let currentY = margin;
+    const lineHeight = 7;
+    const paragraphSpacing = 4;
 
-      const imgData = canvas.toDataURL('image/png');
-      const imgWidth = 170; // A4 width minus margins
-      const pageHeight = 257; // A4 height minus margins
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
+    // Get Quill delta and convert to structured content
+    const delta = quill.getContents();
+    const content = parseQuillDelta(delta);
 
-      let position = 20; // Top margin
-
-      // Add first page
-      pdf.addImage(imgData, 'PNG', 20, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      // Add additional pages if needed
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight + 20;
+    // Process each content block
+    for (const block of content) {
+      // Check if we need a new page
+      if (currentY > pageHeight - margin - 20) {
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 20, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+        currentY = margin;
+      }
+
+      let startX = margin;
+      let alignment = block.attributes?.align || 'left';
+
+      switch (block.type) {
+        case 'header':
+          const headerSizes = { 1: 20, 2: 18, 3: 16, 4: 14, 5: 12, 6: 11 };
+          const fontSize = headerSizes[block.level as keyof typeof headerSizes] || 12;
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(fontSize);
+          currentY += lineHeight;
+
+          const headerText = block.segments.map((seg: any) => seg.text).join('');
+          pdf.text(headerText, startX, currentY);
+          currentY += lineHeight + paragraphSpacing;
+          break;
+
+        case 'paragraph':
+        case 'blockquote':
+        case 'code':
+          currentY += 2; // Small top spacing
+
+          // Handle different block types
+          if (block.type === 'blockquote') {
+            startX = margin + 10;
+            pdf.setFont('helvetica', 'italic');
+            pdf.setFontSize(11);
+          } else if (block.type === 'code') {
+            startX = margin + 5;
+            pdf.setFont('courier', 'normal');
+            pdf.setFontSize(10);
+          } else {
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(12);
+          }
+
+          // Process text segments with formatting
+          let lineText = '';
+          let currentX = startX;
+
+          for (const segment of block.segments) {
+            const attrs = segment.attributes || {};
+
+            // Set font style based on attributes
+            let fontStyle = 'normal';
+            if (attrs.bold && attrs.italic) fontStyle = 'bolditalic';
+            else if (attrs.bold) fontStyle = 'bold';
+            else if (attrs.italic) fontStyle = 'italic';
+
+            // Set font size based on attributes
+            let segmentSize = block.type === 'code' ? 10 :
+                            block.type === 'blockquote' ? 11 : 12;
+            if (attrs.size === 'small') segmentSize = Math.max(8, segmentSize - 2);
+            else if (attrs.size === 'large') segmentSize = segmentSize + 4;
+            else if (attrs.size === 'huge') segmentSize = segmentSize + 8;
+
+            pdf.setFont('helvetica', fontStyle);
+            pdf.setFontSize(segmentSize);
+
+            // Set text color if specified
+            if (attrs.color) {
+              try {
+                const color = attrs.color.startsWith('#') ? attrs.color : '#000000';
+                const r = parseInt(color.slice(1, 3), 16);
+                const g = parseInt(color.slice(3, 5), 16);
+                const b = parseInt(color.slice(5, 7), 16);
+                pdf.setTextColor(r, g, b);
+              } catch (e) {
+                pdf.setTextColor(0, 0, 0); // Default to black
+              }
+            } else {
+              pdf.setTextColor(0, 0, 0);
+            }
+
+            lineText += segment.text;
+          }
+
+          // Handle text alignment
+          if (alignment === 'center') {
+            currentX = pageWidth / 2;
+          } else if (alignment === 'right') {
+            currentX = pageWidth - margin;
+          }
+
+          // Split text into lines and render
+          const textLines = pdf.splitTextToSize(lineText, maxWidth - (startX - margin));
+          const alignOption = alignment === 'center' ? 'center' :
+                             alignment === 'right' ? 'right' : 'left';
+
+          pdf.text(textLines, currentX, currentY, { align: alignOption });
+          currentY += textLines.length * lineHeight + paragraphSpacing;
+          break;
+
+        case 'list':
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(12);
+          pdf.setTextColor(0, 0, 0);
+
+          const listText = block.segments.map((seg: any) => seg.text).join('');
+          const bullet = block.ordered ? '1. ' : '• ';
+          const listLines = pdf.splitTextToSize(bullet + listText, maxWidth - 10);
+          pdf.text(listLines, margin + 5, currentY);
+          currentY += listLines.length * lineHeight + 2;
+          break;
       }
     }
 
@@ -182,10 +201,92 @@ async function generatePdfFromHtml(htmlContent: string) {
     const pdfBlob = pdf.output('blob');
     downloadFile(pdfBlob, `document-${new Date().toISOString().slice(0, 10)}.pdf`);
 
-  } finally {
-    // Clean up
-    document.body.removeChild(tempContainer);
+  } catch (error) {
+    console.error('Advanced text PDF generation failed:', error);
+    throw error;
   }
+}
+
+function parseQuillDelta(delta: any): any[] {
+  const content: any[] = [];
+
+  if (!delta.ops) return content;
+
+  let currentLine: any = { type: 'paragraph', segments: [], attributes: {} };
+
+  for (const op of delta.ops) {
+    if (typeof op.insert === 'string') {
+      const text = op.insert;
+      const attrs = op.attributes || {};
+
+      // Handle line breaks
+      if (text.includes('\n')) {
+        const parts = text.split('\n');
+
+        // Add the first part to current line
+        if (parts[0]) {
+          currentLine.segments.push({
+            text: parts[0],
+            attributes: attrs
+          });
+        }
+
+        // Process complete lines
+        for (let i = 0; i < parts.length - 1; i++) {
+          if (currentLine.segments.length > 0) {
+            // Determine line type based on attributes
+            if (attrs.header) {
+              currentLine.type = 'header';
+              currentLine.level = attrs.header;
+            } else if (attrs.blockquote) {
+              currentLine.type = 'blockquote';
+            } else if (attrs['code-block']) {
+              currentLine.type = 'code';
+            } else if (attrs.list) {
+              currentLine.type = 'list';
+              currentLine.ordered = attrs.list === 'ordered';
+            }
+
+            currentLine.attributes = attrs;
+            content.push(currentLine);
+          }
+
+          // Start new line
+          currentLine = { type: 'paragraph', segments: [], attributes: {} };
+
+          // Add remaining parts
+          if (i < parts.length - 2 && parts[i + 1]) {
+            currentLine.segments.push({
+              text: parts[i + 1],
+              attributes: attrs
+            });
+          }
+        }
+
+        // Handle last part
+        const lastPart = parts[parts.length - 1];
+        if (lastPart) {
+          currentLine.segments.push({
+            text: lastPart,
+            attributes: attrs
+          });
+        }
+      } else {
+        // Add text to current line
+        currentLine.segments.push({
+          text: text,
+          attributes: attrs
+        });
+      }
+    }
+  }
+
+  // Add final line if it has content
+  if (currentLine.segments.length > 0) {
+    content.push(currentLine);
+  }
+
+  return content;
 }
 
 function usePrintToPdf() {
@@ -308,14 +409,13 @@ function usePrintToPdf() {
   printWin.print();
 }
 
-async function generateImagePdf() {
-  showLoader('Generating Image PDF...');
+async function generateAdvancedPdf() {
+  showLoader('Generating Advanced Text PDF...');
   try {
-    const processedHtml = extractAndProcessHtmlContent();
-    await generatePdfFromHtml(processedHtml);
+    await generateAdvancedTextPdf();
   } catch (error) {
-    console.error('Image PDF generation failed:', error);
-    showAlert('Error', 'Failed to generate image-based PDF.');
+    console.error('Advanced text PDF generation failed:', error);
+    showAlert('Error', 'Failed to generate advanced text PDF.');
   } finally {
     hideLoader();
   }
@@ -346,18 +446,18 @@ export function mountHtmlToPdfTool() {
 
     <div class="mt-6 space-y-3">
       <div class="space-y-2">
-        <button id="text-pdf" class="btn-gradient w-full">Export as Text PDF</button>
-        <p class="text-sm text-gray-600 ml-2">• Fast export • Basic formatting • Selectable text • Small file size</p>
+        <button id="text-pdf" class="btn-gradient w-full">Basic Text PDF (quill-to-pdf)</button>
+        <p class="text-sm text-gray-600 ml-2">• Fastest • Limited formatting • Selectable text • Smallest file size</p>
+      </div>
+      
+      <div class="space-y-2">
+        <button id="advanced-pdf" class="btn-gradient w-full">Advanced Text PDF (Recommended)</button>
+        <p class="text-sm text-gray-600 ml-2">• Good formatting • Selectable text • Small file size • Proper structure</p>
       </div>
       
       <div class="space-y-2">
         <button id="print-to-pdf" class="btn-outline w-full">Browser Print to PDF</button>
-        <p class="text-sm text-gray-600 ml-2">• Complete formatting • Selectable text • Uses browser's PDF engine</p>
-      </div>
-      
-      <div class="space-y-2">
-        <button id="image-pdf" class="btn-secondary w-full">Export as Image PDF</button>
-        <p class="text-sm text-gray-600 ml-2">• Exact visual copy • Large file size • Text not selectable</p>
+        <p class="text-sm text-gray-600 ml-2">• Best formatting • Selectable text • Uses browser engine • Requires user interaction</p>
       </div>
     </div>
   `;
@@ -409,6 +509,6 @@ export function mountHtmlToPdfTool() {
 
   // ---- Button handlers ----
   document.getElementById('text-pdf')?.addEventListener('click', htmlToPdf);
+  document.getElementById('advanced-pdf')?.addEventListener('click', generateAdvancedPdf);
   document.getElementById('print-to-pdf')?.addEventListener('click', usePrintToPdf);
-  document.getElementById('image-pdf')?.addEventListener('click', generateImagePdf);
 }
