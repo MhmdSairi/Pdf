@@ -934,6 +934,92 @@ export function mountHtmlToPdfTool() {
         outline: none !important;
       `;
     }
+
+    // Fix Quill tooltips and overlays positioning
+    const style = document.createElement('style');
+    style.textContent = `
+      .ql-tooltip {
+        position: fixed !important;
+        z-index: 2000 !important;
+        background: white !important;
+        border: 1px solid #ccc !important;
+        border-radius: 4px !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
+        max-width: 320px !important;
+        padding: 8px !important;
+        left: 50% !important;
+        top: 50% !important;
+        transform: translate(-50%, -50%) !important;
+      }
+      
+      .ql-tooltip.ql-editing {
+        left: 50% !important;
+        top: 50% !important;
+        transform: translate(-50%, -50%) !important;
+      }
+      
+      .ql-tooltip input[type=text] {
+        width: 220px !important;
+        padding: 8px 10px !important;
+        border: 1px solid #ddd !important;
+        border-radius: 4px !important;
+        font-size: 14px !important;
+        margin-bottom: 8px !important;
+      }
+      
+      .ql-tooltip .ql-action,
+      .ql-tooltip .ql-remove {
+        margin: 0 2px !important;
+        padding: 6px 12px !important;
+        border: none !important;
+        border-radius: 4px !important;
+        cursor: pointer !important;
+        font-size: 12px !important;
+        text-decoration: none !important;
+      }
+      
+      .ql-tooltip .ql-action {
+        background: #007bff !important;
+        color: white !important;
+      }
+      
+      .ql-tooltip .ql-action:hover {
+        background: #0056b3 !important;
+      }
+      
+      .ql-tooltip .ql-remove {
+        background: #6c757d !important;
+        color: white !important;
+      }
+      
+      .ql-tooltip .ql-remove:hover {
+        background: #545b62 !important;
+      }
+      
+      /* Ensure tooltips are always visible and don't get cut off by overflow */
+      #editor {
+        overflow: visible !important;
+      }
+      
+      .ql-container {
+        overflow: visible !important;
+      }
+      
+      .ql-editor {
+        overflow-y: auto !important;
+        overflow-x: visible !important;
+      }
+      
+      /* Fix for link preview */
+      .ql-tooltip[data-mode="link"]::before {
+        content: "Visit URL:" !important;
+        font-size: 12px !important;
+        color: #666 !important;
+        margin-bottom: 4px !important;
+        display: block !important;
+      }
+    `;
+    document.head.appendChild(style);
   }, 100);
 
   // ---- Button handlers ----
