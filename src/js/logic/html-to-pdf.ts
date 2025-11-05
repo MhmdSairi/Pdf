@@ -48,11 +48,10 @@ const parseColor = (colorStr?: string): { r: number; g: number; b: number } => {
   }
 };
 
-function generateFilename(): string {
-  return `document-${new Date().toISOString().slice(0, 10)}.pdf`;
-}
+const generateFilename = (): string =>
+  `document-${new Date().toISOString().slice(0, 10)}.pdf`;
 
-async function generateTextPDF() {
+const generateTextPDF = async (): Promise<void> => {
   try {
     const delta = quill.getContents();
     const pdfBlob: Blob = await pdfExporter.generatePdf(delta);
@@ -61,7 +60,7 @@ async function generateTextPDF() {
     console.error('Text PDF generation failed:', error);
     showAlert('Error', 'Failed to generate text-based PDF. Try the Browser Print or Image PDF options.');
   }
-}
+};
 
 const extractAndProcessHtmlContent = (): string => {
   let htmlContent = quill.root.innerHTML;
@@ -264,7 +263,119 @@ const renderImagePlaceholder = (pdf: any, message: string, currentY: number): nu
   return currentY + PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
 };
 
-async function generateAdvancedTextPdf() {
+const renderBlockQuote = async (pdf: any, formattedSegments: any[], lineText: string, currentY: number, maxWidth: number, pageWidth: number): Promise<number> => {
+  const startX = PDF_CONSTANTS.MARGIN + 10;
+  const quoteWidth = maxWidth - 20;
+  const textLines = pdf.splitTextToSize(lineText, quoteWidth);
+  const blockHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 8;
+
+  // Draw background and border
+  pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.r, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.g, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.b);
+  pdf.rect(PDF_CONSTANTS.MARGIN + 5, currentY - 4, quoteWidth + 10, blockHeight, 'F');
+
+  pdf.setDrawColor(PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.r, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.g, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.b);
+  pdf.setLineWidth(2);
+  pdf.line(PDF_CONSTANTS.MARGIN + 5, currentY - 4, PDF_CONSTANTS.MARGIN + 5, currentY - 4 + blockHeight);
+
+  await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, quoteWidth, 'left', 'blockquote', PDF_CONSTANTS.MARGIN, pageWidth);
+  return currentY + textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING + 4;
+};
+
+const renderCodeBlock = async (pdf: any, formattedSegments: any[], lineText: string, currentY: number, maxWidth: number, pageWidth: number): Promise<number> => {
+  const startX = PDF_CONSTANTS.MARGIN + 5;
+  const codeWidth = maxWidth - 10;
+  const textLines = pdf.splitTextToSize(lineText, codeWidth);
+  const blockHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 8;
+
+  // Draw background and border
+  pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.r, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.g, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.b);
+  pdf.rect(PDF_CONSTANTS.MARGIN, currentY - 4, codeWidth + 10, blockHeight, 'F');
+
+  pdf.setDrawColor(PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.r, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.g, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.b);
+  pdf.setLineWidth(0.5);
+  pdf.rect(PDF_CONSTANTS.MARGIN, currentY - 4, codeWidth + 10, blockHeight, 'S');
+
+  await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, codeWidth, 'left', 'code', PDF_CONSTANTS.MARGIN, pageWidth);
+  return currentY + textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING + 4;
+};
+
+const processInlineImages = async (pdf: any, block: any, currentY: number, maxWidth: number, pageHeight: number): Promise<number> => {
+  if (!block.images?.length) return currentY;
+
+  for (const image of block.images) {
+    try {
+      const imageData = await loadImageAsBase64(image.src);
+      if (imageData) {
+        currentY += 5; // Small spacing
+
+        const maxInlineImageWidth = maxWidth / 2;
+        const maxInlineImageHeight = 50;
+
+        let imgWidth = imageData.width * PDF_CONSTANTS.PIXELS_TO_MM;
+        let imgHeight = imageData.height * PDF_CONSTANTS.PIXELS_TO_MM;
+
+        // Scale to fit constraints
+        if (imgWidth > maxInlineImageWidth) {
+          const ratio = maxInlineImageWidth / imgWidth;
+          imgWidth = maxInlineImageWidth;
+          imgHeight *= ratio;
+        }
+
+        if (imgHeight > maxInlineImageHeight) {
+          const ratio = maxInlineImageHeight / imgHeight;
+          imgHeight = maxInlineImageHeight;
+          imgWidth *= ratio;
+        }
+
+        // Check for page break
+        if (currentY + imgHeight > pageHeight - PDF_CONSTANTS.MARGIN) {
+          pdf.addPage();
+          currentY = PDF_CONSTANTS.MARGIN;
+        }
+
+        pdf.addImage(imageData.data, 'JPEG', PDF_CONSTANTS.MARGIN, currentY, imgWidth, imgHeight);
+        currentY += imgHeight + 5;
+      }
+    } catch (error) {
+      console.warn('Error processing inline image:', error);
+    }
+  }
+
+  return currentY;
+};
+
+const renderRegularParagraph = async (pdf: any, formattedSegments: any[], lineText: string, currentY: number, maxWidth: number, alignment: string, pageWidth: number, pageHeight: number, block: any): Promise<number> => {
+  let currentX = PDF_CONSTANTS.MARGIN;
+
+  // Handle text alignment
+  if (alignment === 'center') {
+    currentX = pageWidth / 2;
+  } else if (alignment === 'right') {
+    currentX = pageWidth - PDF_CONSTANTS.MARGIN;
+  }
+
+  await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, 'paragraph', PDF_CONSTANTS.MARGIN, pageWidth);
+
+  // Process inline images
+  currentY = await processInlineImages(pdf, block, currentY, maxWidth, pageHeight);
+
+  // Calculate text height for currentY adjustment
+  const textLines = pdf.splitTextToSize(lineText, maxWidth);
+  return currentY + textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
+};
+
+const renderBlockType = async (pdf: any, blockType: string, formattedSegments: any[], lineText: string, currentY: number, maxWidth: number, alignment: string, pageWidth: number, pageHeight: number, block: any): Promise<number> => {
+  switch (blockType) {
+    case 'blockquote':
+      return await renderBlockQuote(pdf, formattedSegments, lineText, currentY, maxWidth, pageWidth);
+    case 'code':
+      return await renderCodeBlock(pdf, formattedSegments, lineText, currentY, maxWidth, pageWidth);
+    default:
+      return await renderRegularParagraph(pdf, formattedSegments, lineText, currentY, maxWidth, alignment, pageWidth, pageHeight, block);
+  }
+};
+
+const generateAdvancedTextPdf = async (): Promise<void> => {
   try {
     const { jsPDF } = await import('jspdf');
 
@@ -274,7 +385,7 @@ async function generateAdvancedTextPdf() {
     const pageHeight = pdf.internal.pageSize.getHeight();
     const maxWidth = pageWidth - (PDF_CONSTANTS.MARGIN * 2);
 
-    let currentY = PDF_CONSTANTS.MARGIN;
+    let currentY: number = PDF_CONSTANTS.MARGIN;
 
     // Get Quill delta and convert to structured content
     const delta = quill.getContents();
@@ -314,7 +425,7 @@ async function generateAdvancedTextPdf() {
 
           // Process text segments with formatting
           let lineText = '';
-          let currentX = startX;
+          let currentX: number = startX;
 
           // Store formatted text segments for proper rendering
           const formattedSegments: any[] = [];
@@ -401,103 +512,7 @@ async function generateAdvancedTextPdf() {
           }
 
           // Handle different block types with visual indicators
-          if (block.type === 'blockquote') {
-            // Add blockquote styling - left border and background
-            startX = PDF_CONSTANTS.MARGIN + 10;
-            const quoteWidth = maxWidth - 20;
-            const textLines = pdf.splitTextToSize(lineText, quoteWidth);
-            const blockHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 8;
-
-            // Draw background rectangle
-            pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.r, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.g, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.b);
-            pdf.rect(PDF_CONSTANTS.MARGIN + 5, currentY - 4, quoteWidth + 10, blockHeight, 'F');
-
-            // Draw left border
-            pdf.setDrawColor(PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.r, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.g, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.b);
-            pdf.setLineWidth(2);
-            pdf.line(PDF_CONSTANTS.MARGIN + 5, currentY - 4, PDF_CONSTANTS.MARGIN + 5, currentY - 4 + blockHeight);
-
-            // Render formatted text
-            await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, quoteWidth, 'left', block.type, PDF_CONSTANTS.MARGIN, pageWidth, PDF_CONSTANTS.DEFAULT_LINE_HEIGHT);
-            currentY += textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING + 4;
-
-          } else if (block.type === 'code') {
-            // Add code block styling - border and background
-            startX = PDF_CONSTANTS.MARGIN + 5;
-            const codeWidth = maxWidth - 10;
-            const textLines = pdf.splitTextToSize(lineText, codeWidth);
-            const blockHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 8;
-
-            // Draw background rectangle
-            pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.r, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.g, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.b);
-            pdf.rect(PDF_CONSTANTS.MARGIN, currentY - 4, codeWidth + 10, blockHeight, 'F');
-
-            // Draw border
-            pdf.setDrawColor(PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.r, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.g, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.b);
-            pdf.setLineWidth(0.5);
-            pdf.rect(PDF_CONSTANTS.MARGIN, currentY - 4, codeWidth + 10, blockHeight, 'S');
-
-            // Render formatted text
-            await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, codeWidth, 'left', block.type, PDF_CONSTANTS.MARGIN, pageWidth, PDF_CONSTANTS.DEFAULT_LINE_HEIGHT);
-            currentY += textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING + 4;
-
-          } else {
-            // Regular paragraph
-            // Handle text alignment
-            if (alignment === 'center') {
-              currentX = pageWidth / 2;
-            } else if (alignment === 'right') {
-              currentX = pageWidth - PDF_CONSTANTS.MARGIN;
-            }
-
-            // Render formatted text segments
-            await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, PDF_CONSTANTS.MARGIN, pageWidth, PDF_CONSTANTS.DEFAULT_LINE_HEIGHT);
-
-            // Process inline images if any
-            if (block.images && block.images.length > 0) {
-              for (const image of block.images) {
-                try {
-                  const imageData = await loadImageAsBase64(image.src);
-                  if (imageData) {
-                    // Add image after the text
-                    currentY += 5; // Small spacing
-
-                    const maxInlineImageWidth = maxWidth / 2; // Smaller for inline images
-                    const maxInlineImageHeight = 50;
-
-                    let imgWidth = imageData.width * PDF_CONSTANTS.PIXELS_TO_MM;
-                    let imgHeight = imageData.height * PDF_CONSTANTS.PIXELS_TO_MM;
-
-                    if (imgWidth > maxInlineImageWidth) {
-                      const ratio = maxInlineImageWidth / imgWidth;
-                      imgWidth = maxInlineImageWidth;
-                      imgHeight *= ratio;
-                    }
-
-                    if (imgHeight > maxInlineImageHeight) {
-                      const ratio = maxInlineImageHeight / imgHeight;
-                      imgHeight = maxInlineImageHeight;
-                      imgWidth *= ratio;
-                    }
-
-                    if (currentY + imgHeight > pageHeight - PDF_CONSTANTS.MARGIN) {
-                      pdf.addPage();
-                      currentY = PDF_CONSTANTS.MARGIN;
-                    }
-
-                    pdf.addImage(imageData.data, 'JPEG', PDF_CONSTANTS.MARGIN, currentY, imgWidth, imgHeight);
-                    currentY += imgHeight + 5;
-                  }
-                } catch (error) {
-                  console.warn('Error processing inline image:', error);
-                }
-              }
-            }
-
-            // Calculate text height for currentY adjustment
-            const textLines = pdf.splitTextToSize(lineText, maxWidth);
-            currentY += textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
-          }
+          currentY = await renderBlockType(pdf, block.type, formattedSegments, lineText, currentY, maxWidth, alignment, pageWidth, pageHeight, block);
           break;
 
         case 'list':
@@ -591,105 +606,93 @@ async function generateAdvancedTextPdf() {
     console.error('Advanced text PDF generation failed:', error);
     throw error;
   }
-}
+};
 
-function parseQuillDelta(delta: any): any[] {
+const determineLineType = (attrs: any, currentLine: any): void => {
+  if (attrs.header) {
+    currentLine.type = 'header';
+    currentLine.level = attrs.header;
+  } else if (attrs.blockquote) {
+    currentLine.type = 'blockquote';
+  } else if (attrs['code-block']) {
+    currentLine.type = 'code';
+  } else if (attrs.list) {
+    currentLine.type = 'list';
+    currentLine.ordered = attrs.list === 'ordered';
+  }
+  currentLine.attributes = attrs;
+};
+
+const processTextInsert = (text: string, attrs: any, currentLine: any, content: any[]): any => {
+  if (!text.includes('\n')) {
+    currentLine.segments.push({ text, attributes: attrs });
+    return currentLine;
+  }
+
+  const parts = text.split('\n');
+
+  // Add first part to current line
+  if (parts[0]) {
+    currentLine.segments.push({ text: parts[0], attributes: attrs });
+  }
+
+  // Process complete lines (all but the last part)
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (currentLine.segments.length > 0) {
+      determineLineType(attrs, currentLine);
+      content.push(currentLine);
+    }
+
+    // Start new line for next iteration
+    currentLine = { type: 'paragraph', segments: [], attributes: {} };
+
+    // Add intermediate parts (skip first and last)
+    if (i < parts.length - 2 && parts[i + 1]) {
+      currentLine.segments.push({ text: parts[i + 1], attributes: attrs });
+    }
+  }
+
+  // Handle last part
+  const lastPart = parts[parts.length - 1];
+  if (lastPart) {
+    currentLine.segments.push({ text: lastPart, attributes: attrs });
+  }
+
+  return currentLine;
+};
+
+const processObjectInsert = (insertObj: any, attrs: any, currentLine: any): void => {
+  if (insertObj.image) {
+    currentLine.segments.push({
+      type: 'image',
+      src: insertObj.image,
+      attributes: attrs
+    });
+  } else if (insertObj.link) {
+    currentLine.segments.push({
+      type: 'link',
+      url: insertObj.link,
+      attributes: attrs
+    });
+  } else {
+    currentLine.segments.push({
+      text: '[Embed]',
+      attributes: attrs
+    });
+  }
+};
+
+const parseQuillDelta = (delta: any): any[] => {
   const content: any[] = [];
-
   if (!delta.ops) return content;
 
   let currentLine: any = { type: 'paragraph', segments: [], attributes: {} };
 
   for (const op of delta.ops) {
     if (typeof op.insert === 'string') {
-      const text = op.insert;
-      const attrs = op.attributes || {};
-
-      // Handle line breaks
-      if (text.includes('\n')) {
-        const parts = text.split('\n');
-
-        // Add the first part to current line
-        if (parts[0]) {
-          currentLine.segments.push({
-            text: parts[0],
-            attributes: attrs
-          });
-        }
-
-        // Process complete lines
-        for (let i = 0; i < parts.length - 1; i++) {
-          if (currentLine.segments.length > 0) {
-            // Determine line type based on attributes
-            if (attrs.header) {
-              currentLine.type = 'header';
-              currentLine.level = attrs.header;
-            } else if (attrs.blockquote) {
-              currentLine.type = 'blockquote';
-            } else if (attrs['code-block']) {
-              currentLine.type = 'code';
-            } else if (attrs.list) {
-              currentLine.type = 'list';
-              currentLine.ordered = attrs.list === 'ordered';
-            }
-
-            currentLine.attributes = attrs;
-            content.push(currentLine);
-          }
-
-          // Start new line
-          currentLine = { type: 'paragraph', segments: [], attributes: {} };
-
-          // Add remaining parts
-          if (i < parts.length - 2 && parts[i + 1]) {
-            currentLine.segments.push({
-              text: parts[i + 1],
-              attributes: attrs
-            });
-          }
-        }
-
-        // Handle last part
-        const lastPart = parts[parts.length - 1];
-        if (lastPart) {
-          currentLine.segments.push({
-            text: lastPart,
-            attributes: attrs
-          });
-        }
-      } else {
-        // Add text to current line
-        currentLine.segments.push({
-          text: text,
-          attributes: attrs
-        });
-      }
+      currentLine = processTextInsert(op.insert, op.attributes || {}, currentLine, content);
     } else if (typeof op.insert === 'object') {
-      // Handle embeds like images, links, etc.
-      const insertObj = op.insert;
-      const attrs = op.attributes || {};
-
-      if (insertObj.image) {
-        // Handle image
-        currentLine.segments.push({
-          type: 'image',
-          src: insertObj.image,
-          attributes: attrs
-        });
-      } else if (insertObj.link) {
-        // Handle link (though links are usually attributes, not inserts)
-        currentLine.segments.push({
-          type: 'link',
-          url: insertObj.link,
-          attributes: attrs
-        });
-      } else {
-        // Handle other embeds as text placeholder
-        currentLine.segments.push({
-          text: '[Embed]',
-          attributes: attrs
-        });
-      }
+      processObjectInsert(op.insert, op.attributes || {}, currentLine);
     }
   }
 
@@ -699,104 +702,68 @@ function parseQuillDelta(delta: any): any[] {
   }
 
   return content;
-}
+};
 
-function generatePrintCSS(): string {
-  return `
-    @page {
-      margin: 20mm;
-      size: A4;
-    }
-    
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-      font-size: 12pt;
-      line-height: 1.6;
-      color: #333;
-      margin: 0;
-      padding: 0;
-      background: white;
-    }
-    
-    /* Headers */
-    h1 { font-size: 24pt; font-weight: bold; margin: 16pt 0 12pt 0; line-height: 1.3; }
-    h2 { font-size: 20pt; font-weight: bold; margin: 14pt 0 10pt 0; line-height: 1.3; }
-    h3 { font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt 0; line-height: 1.3; }
-    h4 { font-size: 16pt; font-weight: bold; margin: 10pt 0 6pt 0; line-height: 1.3; }
-    h5 { font-size: 14pt; font-weight: bold; margin: 8pt 0 6pt 0; line-height: 1.3; }
-    h6 { font-size: 13pt; font-weight: bold; margin: 8pt 0 6pt 0; line-height: 1.3; }
-    
-    /* Text formatting */
-    strong, b { font-weight: bold !important; }
-    em, i { font-style: italic !important; }
-    u { text-decoration: underline !important; }
-    s { text-decoration: line-through !important; }
-    
-    /* Font sizes */
-    .ql-size-small { font-size: 10pt !important; }
-    .ql-size-large { font-size: 18pt !important; }
-    .ql-size-huge { font-size: 32pt !important; }
-    
-    /* Text alignment */
-    .ql-align-center { text-align: center; }
-    .ql-align-right { text-align: right; }
-    .ql-align-justify { text-align: justify; }
-    
-    /* Lists */
-    ul, ol { margin: 8pt 0; padding-left: 20pt; }
-    li { margin: 4pt 0; }
-    
-    /* Blockquotes */
-    blockquote {
-      margin: 12pt 20pt;
-      padding: 8pt 16pt;
-      border-left: 4pt solid #ddd;
-      background: #f9f9f9;
-      font-style: italic;
-    }
-    
-    /* Code blocks */
-    pre, .ql-code-block {
-      background: #f5f5f5;
-      border: 1pt solid #ddd;
-      border-radius: 4pt;
-      padding: 12pt;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 10pt;
-      margin: 8pt 0;
-    }
-    
-    /* Indentation */
-    .ql-indent-1 { padding-left: 20pt; }
-    .ql-indent-2 { padding-left: 40pt; }
-    .ql-indent-3 { padding-left: 60pt; }
-    .ql-indent-4 { padding-left: 80pt; }
-    .ql-indent-5 { padding-left: 100pt; }
-    .ql-indent-6 { padding-left: 120pt; }
-    .ql-indent-7 { padding-left: 140pt; }
-    .ql-indent-8 { padding-left: 160pt; }
-    
-    /* Links */
-    a { color: #0066cc; text-decoration: underline; }
-    
-    /* Images */
-    img { max-width: 100%; height: auto; margin: 8pt 0; }
-    
-    /* Paragraphs */
-    p { margin: 6pt 0; }
-    
-    /* Superscript and subscript */
-    sup { vertical-align: super; font-size: 0.75em; }
-    sub { vertical-align: sub; font-size: 0.75em; }
-    
-    /* Print-specific styles */
-    @media print {
-      body { -webkit-print-color-adjust: exact; }
-    }
-  `;
-}
+const generatePrintCSS = (): string => `
+  @page { margin: 20mm; size: A4; }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    font-size: 12pt; line-height: 1.6; color: #333; margin: 0; padding: 0; background: white;
+  }
+  
+  /* Headers */
+  h1, h2, h3, h4, h5, h6 { font-weight: bold; line-height: 1.3; }
+  h1 { font-size: 24pt; margin: 16pt 0 12pt 0; }
+  h2 { font-size: 20pt; margin: 14pt 0 10pt 0; }
+  h3 { font-size: 18pt; margin: 12pt 0 8pt 0; }
+  h4 { font-size: 16pt; margin: 10pt 0 6pt 0; }
+  h5 { font-size: 14pt; margin: 8pt 0 6pt 0; }
+  h6 { font-size: 13pt; margin: 8pt 0 6pt 0; }
+  
+  /* Text formatting */
+  strong, b { font-weight: bold !important; }
+  em, i { font-style: italic !important; }
+  u { text-decoration: underline !important; }
+  s { text-decoration: line-through !important; }
+  sup { vertical-align: super; font-size: 0.75em; }
+  sub { vertical-align: sub; font-size: 0.75em; }
+  
+  /* Quill-specific sizes */
+  .ql-size-small { font-size: 10pt !important; }
+  .ql-size-large { font-size: 18pt !important; }
+  .ql-size-huge { font-size: 32pt !important; }
+  
+  /* Alignment */
+  .ql-align-center { text-align: center; }
+  .ql-align-right { text-align: right; }
+  .ql-align-justify { text-align: justify; }
+  
+  /* Indentation - generate dynamically */
+  ${Array.from({length: 8}, (_, i) => `.ql-indent-${i + 1} { padding-left: ${(i + 1) * 20}pt; }`).join('\n  ')}
+  
+  /* Lists, blocks, and elements */
+  ul, ol { margin: 8pt 0; padding-left: 20pt; }
+  li { margin: 4pt 0; }
+  p { margin: 6pt 0; }
+  a { color: #0066cc; text-decoration: underline; }
+  img { max-width: 100%; height: auto; margin: 8pt 0; }
+  
+  blockquote {
+    margin: 12pt 20pt; padding: 8pt 16pt; border-left: 4pt solid #ddd;
+    background: #f9f9f9; font-style: italic;
+  }
+  
+  pre, .ql-code-block {
+    background: #f5f5f5; border: 1pt solid #ddd; border-radius: 4pt;
+    padding: 12pt; font-family: 'Courier New', Courier, monospace;
+    font-size: 10pt; margin: 8pt 0;
+  }
+  
+  @media print { body { -webkit-print-color-adjust: exact; } }
+`;
 
-function usePrintToPdf() {
+const usePrintToPdf = (): void => {
   const printWin = window.open('', '_blank');
   if (!printWin) {
     showAlert('Error', 'Could not open print window. Please check your popup blocker.');
@@ -813,18 +780,16 @@ function usePrintToPdf() {
         <meta charset="utf-8">
         <style>${generatePrintCSS()}</style>
       </head>
-      <body>
-        ${processedHtml}
-      </body>
+      <body>${processedHtml}</body>
     </html>
   `);
 
   printWin.document.close();
   printWin.focus();
   printWin.print();
-}
+};
 
-async function generateAdvancedPdf() {
+const generateAdvancedPdf = async (): Promise<void> => {
   showLoader('Generating Advanced Text PDF...');
   try {
     await generateAdvancedTextPdf();
@@ -834,7 +799,7 @@ async function generateAdvancedPdf() {
   } finally {
     hideLoader();
   }
-}
+};
 
 export async function htmlToPdf() {
   showLoader('Creating PDF...');
