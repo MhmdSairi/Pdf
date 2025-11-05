@@ -380,9 +380,15 @@ const renderRegularParagraph = async (pdf: any, formattedSegments: any[], lineTe
   // Process inline images
   currentY = await processInlineImages(pdf, block, currentY, maxWidth, pageHeight);
 
-  // Calculate text height for currentY adjustment
-  const textLines = pdf.splitTextToSize(lineText, maxWidth);
-  return currentY + textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
+  // Calculate spacing - handle empty paragraphs differently
+  if (!lineText.trim()) {
+    // Empty paragraph - no additional spacing since it was already added in main flow
+    return currentY + PDF_CONSTANTS.PARAGRAPH_SPACING;
+  } else {
+    // Non-empty paragraph - add text height and spacing
+    const textLines = pdf.splitTextToSize(lineText, maxWidth);
+    return currentY + textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
+  }
 };
 
 const renderBlockType = async (pdf: any, blockType: string, formattedSegments: any[], lineText: string, currentY: number, maxWidth: number, alignment: string, pageWidth: number, pageHeight: number, block: any): Promise<number> => {
@@ -475,7 +481,6 @@ const generateAdvancedTextPdf = async (): Promise<void> => {
 
             // Handle regular text segments with proper formatting
             const segmentText = segment.text || '';
-            if (!segmentText) continue;
 
             const fontStyle = getFontStyle(attrs);
             const segmentSize = getFontSize(block.type, attrs);
@@ -528,9 +533,12 @@ const generateAdvancedTextPdf = async (): Promise<void> => {
           // Handle different block types with visual indicators
           // Note: blockquote and code blocks handle their own text rendering, paragraphs need separate rendering
           if (block.type === 'paragraph') {
-            // Render formatted text segments for regular paragraphs
-            if (formattedSegments.length > 0) {
+            if (formattedSegments.length > 0 && lineText.trim()) {
+              // Render formatted text segments for non-empty paragraphs
               await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, PDF_CONSTANTS.MARGIN, pageWidth);
+            } else if (!lineText.trim()) {
+              // Handle empty paragraph - just add spacing to preserve the empty line
+              currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT;
             }
           }
 
@@ -714,8 +722,8 @@ const parseQuillDelta = (delta: any): any[] => {
     }
   }
 
-  // Add final line if it has content
-  if (currentLine.segments.length > 0) {
+  // Add final line (including empty lines to preserve all line breaks)
+  if (currentLine.segments.length > 0 || content.length > 0) {
     content.push(currentLine);
   }
 
