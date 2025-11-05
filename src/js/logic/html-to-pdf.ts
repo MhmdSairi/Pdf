@@ -8,7 +8,7 @@ import { pdfExporter } from 'quill-to-pdf';
 const PDF_CONSTANTS = {
   PIXELS_TO_MM: 0.264583,
   EM_TO_POINTS: 12,
-  DEFAULT_LINE_HEIGHT: 7,
+  DEFAULT_LINE_HEIGHT: 5,
   PARAGRAPH_SPACING: 4,
   MARGIN: 20,
   SUPERSCRIPT_SCALE: 0.7,
@@ -266,15 +266,18 @@ const renderImagePlaceholder = (pdf: any, message: string, currentY: number): nu
 const renderBlockQuote = async (pdf: any, formattedSegments: any[], lineText: string, currentY: number, maxWidth: number, pageWidth: number): Promise<number> => {
   const boxStartX = PDF_CONSTANTS.MARGIN;
   const textPadding = 8; // Horizontal padding
-  const verticalPadding = 3; // Top/bottom padding for better text spacing
+  const verticalPadding = 5;
   const textStartX = boxStartX + textPadding;
-  const textStartY = currentY + verticalPadding; // Text starts BELOW the box top
   const availableTextWidth = maxWidth - (textPadding * 2);
 
   const textLines = pdf.splitTextToSize(lineText, availableTextWidth);
   const textHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT;
   const blockHeight = textHeight + (verticalPadding * 2); // Top + bottom padding
   const boxWidth = maxWidth;
+
+  // Text should start with proper top padding from the box top
+  // Improved baseline calculation for better vertical centering
+  const textStartY = currentY + verticalPadding + (PDF_CONSTANTS.DEFAULT_LINE_HEIGHT * 0.9); // Better baseline offset
 
   // Draw background rectangle
   pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.r, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.g, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.b);
@@ -296,15 +299,18 @@ const renderCodeBlock = async (pdf: any, formattedSegments: any[], lineText: str
   // Consistent positioning with blockquote
   const boxStartX = PDF_CONSTANTS.MARGIN;
   const textPadding = 8; // Horizontal padding
-  const verticalPadding = 3; // Top/bottom padding for better text spacing
+  const verticalPadding = 5;
   const textStartX = boxStartX + textPadding;
-  const textStartY = currentY + verticalPadding; // Text starts BELOW the box top
   const availableTextWidth = maxWidth - (textPadding * 2);
 
   const textLines = pdf.splitTextToSize(lineText, availableTextWidth);
   const textHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT;
   const blockHeight = textHeight + (verticalPadding * 2); // Top + bottom padding
   const boxWidth = maxWidth;
+
+  // Text should start with proper top padding from the box top
+  // Improved baseline calculation for better vertical centering
+  const textStartY = currentY + verticalPadding + (PDF_CONSTANTS.DEFAULT_LINE_HEIGHT * 0.9); // Better baseline offset
 
   // Draw background rectangle
   pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.r, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.g, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.b);
@@ -647,32 +653,28 @@ const processTextInsert = (text: string, attrs: any, currentLine: any, content: 
 
   const parts = text.split('\n');
 
-  // Add first part to current line
-  if (parts[0]) {
-    currentLine.segments.push({ text: parts[0], attributes: attrs });
-  }
+  // Add first part to current line (even if empty)
+  currentLine.segments.push({ text: parts[0] || '', attributes: attrs });
 
   // Process complete lines (all but the last part)
   for (let i = 0; i < parts.length - 1; i++) {
-    if (currentLine.segments.length > 0) {
-      determineLineType(attrs, currentLine);
-      content.push(currentLine);
-    }
+    // Always push the current line (even if it's empty - this preserves empty lines)
+    determineLineType(attrs, currentLine);
+    content.push(currentLine);
 
     // Start new line for next iteration
     currentLine = { type: 'paragraph', segments: [], attributes: {} };
 
-    // Add intermediate parts (skip first and last)
-    if (i < parts.length - 2 && parts[i + 1]) {
-      currentLine.segments.push({ text: parts[i + 1], attributes: attrs });
+    // Add the next part (even if it's empty - this creates empty paragraphs)
+    if (i < parts.length - 2) {
+      const nextPart = parts[i + 1];
+      currentLine.segments.push({ text: nextPart || '', attributes: attrs });
     }
   }
 
-  // Handle last part
+  // Handle last part (even if empty)
   const lastPart = parts[parts.length - 1];
-  if (lastPart) {
-    currentLine.segments.push({ text: lastPart, attributes: attrs });
-  }
+  currentLine.segments.push({ text: lastPart || '', attributes: attrs });
 
   return currentLine;
 };
