@@ -83,6 +83,10 @@ async function generateAdvancedTextPdf() {
     const delta = quill.getContents();
     const content = parseQuillDelta(delta);
 
+    // Track list numbers
+    let currentListNumber = 1;
+    let lastListType = null;
+
     // Process each content block
     for (const block of content) {
       // Check if we need a new page
@@ -112,20 +116,6 @@ async function generateAdvancedTextPdf() {
         case 'code':
           currentY += 2; // Small top spacing
 
-          // Handle different block types
-          if (block.type === 'blockquote') {
-            startX = margin + 10;
-            pdf.setFont('helvetica', 'italic');
-            pdf.setFontSize(11);
-          } else if (block.type === 'code') {
-            startX = margin + 5;
-            pdf.setFont('courier', 'normal');
-            pdf.setFontSize(10);
-          } else {
-            pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(12);
-          }
-
           // Process text segments with formatting
           let lineText = '';
           let currentX = startX;
@@ -146,7 +136,15 @@ async function generateAdvancedTextPdf() {
             else if (attrs.size === 'large') segmentSize = segmentSize + 4;
             else if (attrs.size === 'huge') segmentSize = segmentSize + 8;
 
-            pdf.setFont('helvetica', fontStyle);
+            // Set font based on block type and attributes
+            if (block.type === 'code') {
+              pdf.setFont('courier', fontStyle);
+            } else if (block.type === 'blockquote') {
+              pdf.setFont('helvetica', 'italic');
+            } else {
+              pdf.setFont('helvetica', fontStyle);
+            }
+
             pdf.setFontSize(segmentSize);
 
             // Set text color if specified
@@ -167,20 +165,62 @@ async function generateAdvancedTextPdf() {
             lineText += segment.text;
           }
 
-          // Handle text alignment
-          if (alignment === 'center') {
-            currentX = pageWidth / 2;
-          } else if (alignment === 'right') {
-            currentX = pageWidth - margin;
+          // Handle different block types with visual indicators
+          if (block.type === 'blockquote') {
+            // Add blockquote styling - left border and background
+            startX = margin + 10;
+            const quoteWidth = maxWidth - 20;
+            const textLines = pdf.splitTextToSize(lineText, quoteWidth);
+            const blockHeight = textLines.length * lineHeight + 8;
+
+            // Draw background rectangle
+            pdf.setFillColor(249, 249, 249); // Light gray background
+            pdf.rect(margin + 5, currentY - 4, quoteWidth + 10, blockHeight, 'F');
+
+            // Draw left border
+            pdf.setDrawColor(221, 221, 221); // Gray border
+            pdf.setLineWidth(2);
+            pdf.line(margin + 5, currentY - 4, margin + 5, currentY - 4 + blockHeight);
+
+            pdf.text(textLines, startX, currentY);
+            currentY += textLines.length * lineHeight + paragraphSpacing + 4;
+
+          } else if (block.type === 'code') {
+            // Add code block styling - border and background
+            startX = margin + 5;
+            const codeWidth = maxWidth - 10;
+            const textLines = pdf.splitTextToSize(lineText, codeWidth);
+            const blockHeight = textLines.length * lineHeight + 8;
+
+            // Draw background rectangle
+            pdf.setFillColor(245, 245, 245); // Light gray background
+            pdf.rect(margin, currentY - 4, codeWidth + 10, blockHeight, 'F');
+
+            // Draw border
+            pdf.setDrawColor(221, 221, 221); // Gray border
+            pdf.setLineWidth(0.5);
+            pdf.rect(margin, currentY - 4, codeWidth + 10, blockHeight, 'S');
+
+            pdf.text(textLines, startX, currentY);
+            currentY += textLines.length * lineHeight + paragraphSpacing + 4;
+
+          } else {
+            // Regular paragraph
+            // Handle text alignment
+            if (alignment === 'center') {
+              currentX = pageWidth / 2;
+            } else if (alignment === 'right') {
+              currentX = pageWidth - margin;
+            }
+
+            // Split text into lines and render
+            const textLines = pdf.splitTextToSize(lineText, maxWidth);
+            const alignOption = alignment === 'center' ? 'center' :
+                               alignment === 'right' ? 'right' : 'left';
+
+            pdf.text(textLines, currentX, currentY, { align: alignOption });
+            currentY += textLines.length * lineHeight + paragraphSpacing;
           }
-
-          // Split text into lines and render
-          const textLines = pdf.splitTextToSize(lineText, maxWidth - (startX - margin));
-          const alignOption = alignment === 'center' ? 'center' :
-                             alignment === 'right' ? 'right' : 'left';
-
-          pdf.text(textLines, currentX, currentY, { align: alignOption });
-          currentY += textLines.length * lineHeight + paragraphSpacing;
           break;
 
         case 'list':
@@ -188,12 +228,33 @@ async function generateAdvancedTextPdf() {
           pdf.setFontSize(12);
           pdf.setTextColor(0, 0, 0);
 
+          // Reset list counter if list type changed
+          if (lastListType !== block.type + (block.ordered ? 'ordered' : 'unordered')) {
+            currentListNumber = 1;
+            lastListType = block.type + (block.ordered ? 'ordered' : 'unordered');
+          }
+
           const listText = block.segments.map((seg: any) => seg.text).join('');
-          const bullet = block.ordered ? '1. ' : '• ';
-          const listLines = pdf.splitTextToSize(bullet + listText, maxWidth - 10);
-          pdf.text(listLines, margin + 5, currentY);
-          currentY += listLines.length * lineHeight + 2;
+          let bullet;
+          if (block.ordered) {
+            bullet = `${currentListNumber}. `;
+            currentListNumber++;
+          } else {
+            bullet = '• ';
+          }
+
+          const listLines = pdf.splitTextToSize(bullet + listText, maxWidth - 15);
+          pdf.text(listLines, margin + 10, currentY);
+          currentY += listLines.length * lineHeight + 3;
           break;
+
+      default:
+        // Reset list counter for non-list items
+        if (block.type !== 'list') {
+          currentListNumber = 1;
+          lastListType = null;
+        }
+        break;
       }
     }
 
