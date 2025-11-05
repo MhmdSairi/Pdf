@@ -169,9 +169,9 @@ async function renderFormattedText(
 
       // Add strikethrough if needed
       if (segment.strike) {
-        const strikeY = currentY - (segment.fontSize * 0.176389); // Half the font size in mm
+        const strikeY = currentY - (segment.fontSize * 0.1); // Half the font size in mm
         pdf.setDrawColor(segment.textColor.r, segment.textColor.g, segment.textColor.b);
-        pdf.setLineWidth(0.2);
+        pdf.setLineWidth(0.3); // Make line thicker for better visibility
         pdf.line(renderX, strikeY, renderX + lineWidth, strikeY);
       }
 
@@ -354,7 +354,7 @@ async function generateAdvancedTextPdf() {
               textColor,
               backgroundColor,
               underline: attrs.underline || false,
-              strike: attrs.strike || false,
+              strike: attrs.strike || attrs.strikethrough || false,
               startIndex: lineText.length,
               endIndex: lineText.length + segmentText.length
             });
