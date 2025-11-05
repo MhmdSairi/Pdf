@@ -88,8 +88,6 @@ export function mountHtmlToPdfTool() {
     theme: 'snow',
     modules: {
       toolbar: [
-        [{ 'font': [] }],
-        [{ 'size': ['small', false, 'large', 'huge'] }],
         [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
         ['bold', 'italic', 'underline', 'strike'],
         [{ 'color': [] }, { 'background': [] }],
@@ -105,6 +103,31 @@ export function mountHtmlToPdfTool() {
     },
     placeholder: 'Start typing your document…',
   });
+
+  // Fix Quill toolbar styling issues - use timeout to ensure DOM is ready
+  setTimeout(() => {
+    const toolbar = document.querySelector('.ql-toolbar');
+    const container = document.querySelector('.ql-container');
+
+    if (toolbar) {
+      (toolbar as HTMLElement).style.cssText = `
+        background: #fafafa !important;
+        border: 1px solid #ccc !important;
+        border-bottom: 1px solid #ccc !important;
+        border-radius: 8px 8px 0 0 !important;
+        padding: 8px !important;
+      `;
+    }
+
+    if (container) {
+      (container as HTMLElement).style.cssText = `
+        background: white !important;
+        border: 1px solid #ccc !important;
+        border-top: none !important;
+        border-radius: 0 0 8px 8px !important;
+      `;
+    }
+  }, 100);
 
   // ---- Button handlers ----
   document.getElementById('text-pdf')?.addEventListener('click', htmlToPdf);
