@@ -200,8 +200,8 @@ const renderFormattedText = (
     pdf.setFontSize(adjustedFontSize);
     pdf.setTextColor(segment.textColor.r, segment.textColor.g, segment.textColor.b);
 
-    // Handle background color
-    if (segment.backgroundColor) {
+    // Handle background color (skip for code blocks and blockquotes since they have unified backgrounds)
+    if (segment.backgroundColor && blockType !== 'code' && blockType !== 'blockquote') {
       const textWidth = pdf.getTextWidth(segment.text);
       const textHeight = segment.fontSize * 0.352778;
       pdf.setFillColor(segment.backgroundColor.r, segment.backgroundColor.g, segment.backgroundColor.b);
