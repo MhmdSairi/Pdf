@@ -831,8 +831,8 @@ export function mountHtmlToPdfTool() {
   if (!container) return;
 
   container.innerHTML = `
-    <div class="p-6 flex flex-col">
-      <div id="editor" class="bg-white flex-1 border-2 border-gray-300 rounded-lg overflow-hidden min-h-96"></div>
+    <div class="p-6 flex flex-col h-full">
+      <div id="editor" class="bg-white border-2 border-gray-300 rounded-lg overflow-hidden" style="height: 500px; max-height: 60vh; display: flex; flex-direction: column;"></div>
     </div>
 
     <div class="mt-6 space-y-3">
@@ -875,25 +875,63 @@ export function mountHtmlToPdfTool() {
 
   // Fix Quill toolbar styling issues - use timeout to ensure DOM is ready
   setTimeout(() => {
+    const editorContainer = document.querySelector('#editor');
     const toolbar = document.querySelector('.ql-toolbar');
     const container = document.querySelector('.ql-container');
+    const editor = document.querySelector('.ql-editor');
+
+    // Make the parent editor container establish a new stacking context
+    if (editorContainer) {
+      (editorContainer as HTMLElement).style.cssText = `
+        height: 500px !important;
+        max-height: 60vh !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+        border: 2px solid #d1d5db !important;
+        border-radius: 8px !important;
+        background: white !important;
+        position: relative !important;
+      `;
+    }
 
     if (toolbar) {
       (toolbar as HTMLElement).style.cssText = `
         background: #fafafa !important;
-        border: 1px solid #ccc !important;
+        border: none !important;
         border-bottom: 1px solid #ccc !important;
         border-radius: 8px 8px 0 0 !important;
         padding: 8px !important;
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 100 !important;
+        flex-shrink: 0 !important;
+        order: 1 !important;
       `;
     }
 
     if (container) {
       (container as HTMLElement).style.cssText = `
         background: white !important;
-        border: 1px solid #ccc !important;
-        border-top: none !important;
+        border: none !important;
         border-radius: 0 0 8px 8px !important;
+        flex: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+        order: 2 !important;
+      `;
+    }
+
+    if (editor) {
+      (editor as HTMLElement).style.cssText = `
+        background: white !important;
+        color: #333 !important;
+        flex: 1 !important;
+        overflow-y: auto !important;
+        padding: 12px 15px !important;
+        border: none !important;
+        outline: none !important;
       `;
     }
   }, 100);
