@@ -8,8 +8,8 @@ import { pdfExporter } from 'quill-to-pdf';
 const PDF_CONSTANTS = {
   PIXELS_TO_MM: 0.264583,
   EM_TO_POINTS: 12,
-  DEFAULT_LINE_HEIGHT: 5,
-  PARAGRAPH_SPACING: 4,
+  DEFAULT_LINE_HEIGHT: 3.5,
+  PARAGRAPH_SPACING: 2.5,
   MARGIN: 20,
   SUPERSCRIPT_SCALE: 0.7,
   SUPERSCRIPT_OFFSET: 0.4,
@@ -288,8 +288,8 @@ const renderBlockQuote = async (pdf: any, formattedSegments: any[], lineText: st
   pdf.setLineWidth(2);
   pdf.line(boxStartX, currentY, boxStartX, currentY + blockHeight);
 
-  // Render text with proper vertical positioning inside the box
-  await renderFormattedText(pdf, formattedSegments, lineText, textStartX, textStartY, availableTextWidth, 'left', 'blockquote', PDF_CONSTANTS.MARGIN, pageWidth);
+  // Render text with proper vertical positioning inside the box and tighter line spacing
+  await renderFormattedText(pdf, formattedSegments, lineText, textStartX, textStartY, availableTextWidth, 'left', 'blockquote', PDF_CONSTANTS.MARGIN, pageWidth, PDF_CONSTANTS.DEFAULT_LINE_HEIGHT * 0.9);
 
   // Return position after the block
   return currentY + blockHeight + PDF_CONSTANTS.PARAGRAPH_SPACING;
@@ -321,8 +321,8 @@ const renderCodeBlock = async (pdf: any, formattedSegments: any[], lineText: str
   pdf.setLineWidth(0.5);
   pdf.rect(boxStartX, currentY, boxWidth, blockHeight, 'S');
 
-  // Render text with proper vertical positioning inside the box
-  await renderFormattedText(pdf, formattedSegments, lineText, textStartX, textStartY, availableTextWidth, 'left', 'code', PDF_CONSTANTS.MARGIN, pageWidth);
+  // Render text with proper vertical positioning inside the box and tighter line spacing
+  await renderFormattedText(pdf, formattedSegments, lineText, textStartX, textStartY, availableTextWidth, 'left', 'code', PDF_CONSTANTS.MARGIN, pageWidth, PDF_CONSTANTS.DEFAULT_LINE_HEIGHT * 0.9);
 
   // Return position after the block
   return currentY + blockHeight + PDF_CONSTANTS.PARAGRAPH_SPACING;
@@ -438,17 +438,17 @@ const generateAdvancedTextPdf = async (): Promise<void> => {
           const fontSize = PDF_CONSTANTS.HEADER_SIZES[block.level as keyof typeof PDF_CONSTANTS.HEADER_SIZES] || 12;
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(fontSize);
-          currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT;
+          currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT * 0.7; // Reduced header top spacing
 
           const headerText = block.segments.map((seg: any) => seg.text).join('');
           pdf.text(headerText, startX, currentY);
-          currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
+          currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT * 0.8 + PDF_CONSTANTS.PARAGRAPH_SPACING; // Reduced header bottom spacing
           break;
 
         case 'paragraph':
         case 'blockquote':
         case 'code':
-          currentY += 2; // Small top spacing
+          currentY += 1; // Reduced top spacing
 
           // Process text segments with formatting
           let lineText = '';
@@ -534,11 +534,11 @@ const generateAdvancedTextPdf = async (): Promise<void> => {
           // Note: blockquote and code blocks handle their own text rendering, paragraphs need separate rendering
           if (block.type === 'paragraph') {
             if (formattedSegments.length > 0 && lineText.trim()) {
-              // Render formatted text segments for non-empty paragraphs
-              await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, PDF_CONSTANTS.MARGIN, pageWidth);
+              // Render formatted text segments for non-empty paragraphs with tighter line spacing
+              await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, PDF_CONSTANTS.MARGIN, pageWidth, PDF_CONSTANTS.DEFAULT_LINE_HEIGHT * 0.9);
             } else if (!lineText.trim()) {
-              // Handle empty paragraph - just add spacing to preserve the empty line
-              currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT;
+              // Handle empty paragraph - add minimal spacing to preserve the empty line
+              currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT * 0.8;
             }
           }
 
@@ -567,7 +567,7 @@ const generateAdvancedTextPdf = async (): Promise<void> => {
 
           const listLines = pdf.splitTextToSize(bullet + listText, maxWidth - 15);
           pdf.text(listLines, PDF_CONSTANTS.MARGIN + 10, currentY);
-          currentY += listLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 3;
+          currentY += listLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 1.5; // Reduced from +3 to +1.5
           break;
 
         case 'image':
