@@ -265,49 +265,61 @@ const renderImagePlaceholder = (pdf: any, message: string, currentY: number): nu
 
 const renderBlockQuote = async (pdf: any, formattedSegments: any[], lineText: string, currentY: number, maxWidth: number, pageWidth: number): Promise<number> => {
   const boxStartX = PDF_CONSTANTS.MARGIN;
-  const textPadding = 10;
+  const textPadding = 8; // Horizontal padding
+  const verticalPadding = 3; // Top/bottom padding for better text spacing
   const textStartX = boxStartX + textPadding;
-  const availableTextWidth = maxWidth - (textPadding * 2); // Account for padding on both sides
+  const textStartY = currentY + verticalPadding; // Text starts BELOW the box top
+  const availableTextWidth = maxWidth - (textPadding * 2);
+
   const textLines = pdf.splitTextToSize(lineText, availableTextWidth);
-  const blockHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 8;
-  const boxWidth = maxWidth; // Use full available width
+  const textHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT;
+  const blockHeight = textHeight + (verticalPadding * 2); // Top + bottom padding
+  const boxWidth = maxWidth;
 
-  // Draw background rectangle (starts at normal margin, not shifted right)
+  // Draw background rectangle
   pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.r, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.g, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.b);
-  pdf.rect(boxStartX, currentY - 4, boxWidth, blockHeight, 'F');
+  pdf.rect(boxStartX, currentY, boxWidth, blockHeight, 'F');
 
-  // Draw left border line (at the left edge of the box)
+  // Draw left border line
   pdf.setDrawColor(PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.r, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.g, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.b);
   pdf.setLineWidth(2);
-  pdf.line(boxStartX, currentY - 4, boxStartX, currentY - 4 + blockHeight);
+  pdf.line(boxStartX, currentY, boxStartX, currentY + blockHeight);
 
-  // Render text inside the box with proper positioning (text starts inside the box boundaries)
-  await renderFormattedText(pdf, formattedSegments, lineText, textStartX, currentY, availableTextWidth, 'left', 'blockquote', PDF_CONSTANTS.MARGIN, pageWidth);
-  return currentY + textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING + 4;
+  // Render text with proper vertical positioning inside the box
+  await renderFormattedText(pdf, formattedSegments, lineText, textStartX, textStartY, availableTextWidth, 'left', 'blockquote', PDF_CONSTANTS.MARGIN, pageWidth);
+
+  // Return position after the block
+  return currentY + blockHeight + PDF_CONSTANTS.PARAGRAPH_SPACING;
 };
 
 const renderCodeBlock = async (pdf: any, formattedSegments: any[], lineText: string, currentY: number, maxWidth: number, pageWidth: number): Promise<number> => {
-  // Calculate consistent positioning
-  const boxMargin = PDF_CONSTANTS.MARGIN;
-  const textPadding = 8;
-  const textStartX = boxMargin + textPadding;
-  const availableTextWidth = maxWidth - (textPadding * 2); // Account for padding on both sides
+  // Consistent positioning with blockquote
+  const boxStartX = PDF_CONSTANTS.MARGIN;
+  const textPadding = 8; // Horizontal padding
+  const verticalPadding = 3; // Top/bottom padding for better text spacing
+  const textStartX = boxStartX + textPadding;
+  const textStartY = currentY + verticalPadding; // Text starts BELOW the box top
+  const availableTextWidth = maxWidth - (textPadding * 2);
+
   const textLines = pdf.splitTextToSize(lineText, availableTextWidth);
-  const blockHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 8;
+  const textHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT;
+  const blockHeight = textHeight + (verticalPadding * 2); // Top + bottom padding
   const boxWidth = maxWidth;
 
   // Draw background rectangle
   pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.r, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.g, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.b);
-  pdf.rect(boxMargin, currentY - 4, boxWidth, blockHeight, 'F');
+  pdf.rect(boxStartX, currentY, boxWidth, blockHeight, 'F');
 
   // Draw border around the entire box
   pdf.setDrawColor(PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.r, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.g, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.b);
   pdf.setLineWidth(0.5);
-  pdf.rect(boxMargin, currentY - 4, boxWidth, blockHeight, 'S');
+  pdf.rect(boxStartX, currentY, boxWidth, blockHeight, 'S');
 
-  // Render text inside the box with proper positioning
-  await renderFormattedText(pdf, formattedSegments, lineText, textStartX, currentY, availableTextWidth, 'left', 'code', PDF_CONSTANTS.MARGIN, pageWidth);
-  return currentY + textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING + 4;
+  // Render text with proper vertical positioning inside the box
+  await renderFormattedText(pdf, formattedSegments, lineText, textStartX, textStartY, availableTextWidth, 'left', 'code', PDF_CONSTANTS.MARGIN, pageWidth);
+
+  // Return position after the block
+  return currentY + blockHeight + PDF_CONSTANTS.PARAGRAPH_SPACING;
 };
 
 const processInlineImages = async (pdf: any, block: any, currentY: number, maxWidth: number, pageHeight: number): Promise<number> => {
@@ -356,16 +368,8 @@ const processInlineImages = async (pdf: any, block: any, currentY: number, maxWi
 };
 
 const renderRegularParagraph = async (pdf: any, formattedSegments: any[], lineText: string, currentY: number, maxWidth: number, alignment: string, pageWidth: number, pageHeight: number, block: any): Promise<number> => {
-  let currentX = PDF_CONSTANTS.MARGIN;
-
-  // Handle text alignment
-  if (alignment === 'center') {
-    currentX = pageWidth / 2;
-  } else if (alignment === 'right') {
-    currentX = pageWidth - PDF_CONSTANTS.MARGIN;
-  }
-
-  await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, 'paragraph', PDF_CONSTANTS.MARGIN, pageWidth);
+  // Note: Text rendering for paragraphs is now handled in the main flow to prevent doubling
+  // This function only handles post-text processing like images and positioning
 
   // Process inline images
   currentY = await processInlineImages(pdf, block, currentY, maxWidth, pageHeight);
@@ -515,14 +519,15 @@ const generateAdvancedTextPdf = async (): Promise<void> => {
             lineText += segmentText;
           }
 
-          // Now render the text with proper formatting
-          if (formattedSegments.length > 0) {
-
-            // Render formatted text segments
-            await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, PDF_CONSTANTS.MARGIN, pageWidth);
+          // Handle different block types with visual indicators
+          // Note: blockquote and code blocks handle their own text rendering, paragraphs need separate rendering
+          if (block.type === 'paragraph') {
+            // Render formatted text segments for regular paragraphs
+            if (formattedSegments.length > 0) {
+              await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, PDF_CONSTANTS.MARGIN, pageWidth);
+            }
           }
 
-          // Handle different block types with visual indicators
           currentY = await renderBlockType(pdf, block.type, formattedSegments, lineText, currentY, maxWidth, alignment, pageWidth, pageHeight, block);
           break;
 
