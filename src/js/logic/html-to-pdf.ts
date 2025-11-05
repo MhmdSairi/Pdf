@@ -4,19 +4,62 @@ import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
 import { pdfExporter } from 'quill-to-pdf';
 
+// Constants
+const PDF_CONSTANTS = {
+  PIXELS_TO_MM: 0.264583,
+  EM_TO_POINTS: 12,
+  DEFAULT_LINE_HEIGHT: 7,
+  PARAGRAPH_SPACING: 4,
+  MARGIN: 20,
+  SUPERSCRIPT_SCALE: 0.7,
+  SUPERSCRIPT_OFFSET: 0.4,
+  SUBSCRIPT_SCALE: 0.7,
+  SUBSCRIPT_OFFSET: 0.25,
+  HEADER_SIZES: { 1: 20, 2: 18, 3: 16, 4: 14, 5: 12, 6: 11 },
+  DEFAULT_COLORS: {
+    BLACK: { r: 0, g: 0, b: 0 },
+    LINK_BLUE: { r: 0, g: 102, b: 204 },
+    LIGHT_GRAY: { r: 249, g: 249, b: 249 },
+    GRAY_BORDER: { r: 221, g: 221, b: 221 },
+    CODE_BG: { r: 245, g: 245, b: 245 },
+    PLACEHOLDER_GRAY: { r: 128, g: 128, b: 128 }
+  }
+} as const;
+
 let quill: Quill;
+
+// Utility functions
+function rgbToHex(rgb: string): string {
+  const [r, g, b] = rgb.split(',').map((n: string) => parseInt(n.trim()));
+  return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+function parseColor(colorStr?: string): { r: number; g: number; b: number } {
+  if (!colorStr) return PDF_CONSTANTS.DEFAULT_COLORS.BLACK;
+
+  try {
+    if (colorStr.startsWith('#')) {
+      return {
+        r: parseInt(colorStr.slice(1, 3), 16),
+        g: parseInt(colorStr.slice(3, 5), 16),
+        b: parseInt(colorStr.slice(5, 7), 16)
+      };
+    }
+    return PDF_CONSTANTS.DEFAULT_COLORS.BLACK;
+  } catch {
+    return PDF_CONSTANTS.DEFAULT_COLORS.BLACK;
+  }
+}
+
+function generateFilename(): string {
+  return `document-${new Date().toISOString().slice(0, 10)}.pdf`;
+}
 
 async function generateTextPDF() {
   try {
-    // Use quill-to-pdf for text-based PDF generation
     const delta = quill.getContents();
     const pdfBlob: Blob = await pdfExporter.generatePdf(delta);
-
-    downloadFile(
-      pdfBlob,
-      `document-${new Date().toISOString().slice(0, 10)}.pdf`
-    );
-
+    downloadFile(pdfBlob, generateFilename());
   } catch (error) {
     console.error('Text PDF generation failed:', error);
     showAlert('Error', 'Failed to generate text-based PDF. Try the Browser Print or Image PDF options.');
@@ -24,7 +67,6 @@ async function generateTextPDF() {
 }
 
 function extractAndProcessHtmlContent(): string {
-  // Get the raw HTML from Quill editor
   let htmlContent = quill.root.innerHTML;
 
   // Process inline styles to ensure they work in PDF
@@ -116,7 +158,7 @@ async function renderFormattedText(
   blockType: string,
   margin: number,
   pageWidth: number,
-  lineHeight: number = 7
+  lineHeight: number = PDF_CONSTANTS.DEFAULT_LINE_HEIGHT
 ) {
   if (formattedSegments.length === 0) return;
 
@@ -132,11 +174,11 @@ async function renderFormattedText(
 
     // Handle superscript and subscript with more distinct positioning
     if (segment.script === 'super') {
-      adjustedFontSize = segment.fontSize * 0.7; // Smaller font for superscript
-      yOffset = -(segment.fontSize * 0.4); // Move up more
+      adjustedFontSize = segment.fontSize * PDF_CONSTANTS.SUPERSCRIPT_SCALE;
+      yOffset = -(segment.fontSize * PDF_CONSTANTS.SUPERSCRIPT_OFFSET);
     } else if (segment.script === 'sub') {
-      adjustedFontSize = segment.fontSize * 0.7; // Smaller font for subscript
-      yOffset = segment.fontSize * 0.25; // Move down more
+      adjustedFontSize = segment.fontSize * PDF_CONSTANTS.SUBSCRIPT_SCALE;
+      yOffset = segment.fontSize * PDF_CONSTANTS.SUBSCRIPT_OFFSET;
     }
 
     pdf.setFont(segment.fontFamily, segment.fontStyle);
@@ -211,12 +253,9 @@ async function generateAdvancedTextPdf() {
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 20;
-    const maxWidth = pageWidth - (margin * 2);
+    const maxWidth = pageWidth - (PDF_CONSTANTS.MARGIN * 2);
 
-    let currentY = margin;
-    const lineHeight = 7;
-    const paragraphSpacing = 4;
+    let currentY = PDF_CONSTANTS.MARGIN;
 
     // Get Quill delta and convert to structured content
     const delta = quill.getContents();
@@ -229,25 +268,24 @@ async function generateAdvancedTextPdf() {
     // Process each content block
     for (const block of content) {
       // Check if we need a new page
-      if (currentY > pageHeight - margin - 20) {
+      if (currentY > pageHeight - PDF_CONSTANTS.MARGIN - 20) {
         pdf.addPage();
-        currentY = margin;
+        currentY = PDF_CONSTANTS.MARGIN;
       }
 
-      let startX = margin;
+      let startX = PDF_CONSTANTS.MARGIN;
       let alignment = block.attributes?.align || 'left';
 
       switch (block.type) {
         case 'header':
-          const headerSizes = { 1: 20, 2: 18, 3: 16, 4: 14, 5: 12, 6: 11 };
-          const fontSize = headerSizes[block.level as keyof typeof headerSizes] || 12;
+          const fontSize = PDF_CONSTANTS.HEADER_SIZES[block.level as keyof typeof PDF_CONSTANTS.HEADER_SIZES] || 12;
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(fontSize);
-          currentY += lineHeight;
+          currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT;
 
           const headerText = block.segments.map((seg: any) => seg.text).join('');
           pdf.text(headerText, startX, currentY);
-          currentY += lineHeight + paragraphSpacing;
+          currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
           break;
 
         case 'paragraph':
@@ -312,23 +350,11 @@ async function generateAdvancedTextPdf() {
             }
 
             // Parse colors
-            let textColor = { r: 0, g: 0, b: 0 }; // Default black
-            if (attrs.color) {
-              try {
-                const color = attrs.color.startsWith('#') ? attrs.color : '#000000';
-                textColor = {
-                  r: parseInt(color.slice(1, 3), 16),
-                  g: parseInt(color.slice(3, 5), 16),
-                  b: parseInt(color.slice(5, 7), 16)
-                };
-              } catch (e) {
-                textColor = { r: 0, g: 0, b: 0 };
-              }
-            }
+            let textColor = parseColor(attrs.color);
 
             // Handle link formatting (override color with blue)
             if (attrs.link) {
-              textColor = { r: 0, g: 102, b: 204 }; // Blue color for links
+              textColor = PDF_CONSTANTS.DEFAULT_COLORS.LINK_BLUE;
 
               // Store link info for later processing
               if (!block.links) block.links = [];
@@ -343,17 +369,9 @@ async function generateAdvancedTextPdf() {
             // Parse background color
             let backgroundColor = null;
             if (attrs.background) {
-              try {
-                const bgColor = attrs.background.startsWith('#') ? attrs.background : null;
-                if (bgColor && bgColor !== '#000000') { // Don't render black backgrounds
-                  backgroundColor = {
-                    r: parseInt(bgColor.slice(1, 3), 16),
-                    g: parseInt(bgColor.slice(3, 5), 16),
-                    b: parseInt(bgColor.slice(5, 7), 16)
-                  };
-                }
-              } catch (e) {
-                backgroundColor = null;
+              const bgColor = parseColor(attrs.background);
+              if (bgColor !== PDF_CONSTANTS.DEFAULT_COLORS.BLACK) {
+                backgroundColor = bgColor;
               }
             }
 
@@ -379,49 +397,49 @@ async function generateAdvancedTextPdf() {
           if (formattedSegments.length > 0) {
 
             // Render formatted text segments
-            await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, margin, pageWidth);
+            await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, PDF_CONSTANTS.MARGIN, pageWidth);
           }
 
           // Handle different block types with visual indicators
           if (block.type === 'blockquote') {
             // Add blockquote styling - left border and background
-            startX = margin + 10;
+            startX = PDF_CONSTANTS.MARGIN + 10;
             const quoteWidth = maxWidth - 20;
             const textLines = pdf.splitTextToSize(lineText, quoteWidth);
-            const blockHeight = textLines.length * lineHeight + 8;
+            const blockHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 8;
 
             // Draw background rectangle
-            pdf.setFillColor(249, 249, 249); // Light gray background
-            pdf.rect(margin + 5, currentY - 4, quoteWidth + 10, blockHeight, 'F');
+            pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.r, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.g, PDF_CONSTANTS.DEFAULT_COLORS.LIGHT_GRAY.b);
+            pdf.rect(PDF_CONSTANTS.MARGIN + 5, currentY - 4, quoteWidth + 10, blockHeight, 'F');
 
             // Draw left border
-            pdf.setDrawColor(221, 221, 221); // Gray border
+            pdf.setDrawColor(PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.r, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.g, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.b);
             pdf.setLineWidth(2);
-            pdf.line(margin + 5, currentY - 4, margin + 5, currentY - 4 + blockHeight);
+            pdf.line(PDF_CONSTANTS.MARGIN + 5, currentY - 4, PDF_CONSTANTS.MARGIN + 5, currentY - 4 + blockHeight);
 
             // Render formatted text
-            await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, quoteWidth, 'left', block.type, margin, pageWidth, lineHeight);
-            currentY += textLines.length * lineHeight + paragraphSpacing + 4;
+            await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, quoteWidth, 'left', block.type, PDF_CONSTANTS.MARGIN, pageWidth, PDF_CONSTANTS.DEFAULT_LINE_HEIGHT);
+            currentY += textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING + 4;
 
           } else if (block.type === 'code') {
             // Add code block styling - border and background
-            startX = margin + 5;
+            startX = PDF_CONSTANTS.MARGIN + 5;
             const codeWidth = maxWidth - 10;
             const textLines = pdf.splitTextToSize(lineText, codeWidth);
-            const blockHeight = textLines.length * lineHeight + 8;
+            const blockHeight = textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 8;
 
             // Draw background rectangle
-            pdf.setFillColor(245, 245, 245); // Light gray background
-            pdf.rect(margin, currentY - 4, codeWidth + 10, blockHeight, 'F');
+            pdf.setFillColor(PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.r, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.g, PDF_CONSTANTS.DEFAULT_COLORS.CODE_BG.b);
+            pdf.rect(PDF_CONSTANTS.MARGIN, currentY - 4, codeWidth + 10, blockHeight, 'F');
 
             // Draw border
-            pdf.setDrawColor(221, 221, 221); // Gray border
+            pdf.setDrawColor(PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.r, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.g, PDF_CONSTANTS.DEFAULT_COLORS.GRAY_BORDER.b);
             pdf.setLineWidth(0.5);
-            pdf.rect(margin, currentY - 4, codeWidth + 10, blockHeight, 'S');
+            pdf.rect(PDF_CONSTANTS.MARGIN, currentY - 4, codeWidth + 10, blockHeight, 'S');
 
             // Render formatted text
-            await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, codeWidth, 'left', block.type, margin, pageWidth, lineHeight);
-            currentY += textLines.length * lineHeight + paragraphSpacing + 4;
+            await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, codeWidth, 'left', block.type, PDF_CONSTANTS.MARGIN, pageWidth, PDF_CONSTANTS.DEFAULT_LINE_HEIGHT);
+            currentY += textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING + 4;
 
           } else {
             // Regular paragraph
@@ -429,11 +447,11 @@ async function generateAdvancedTextPdf() {
             if (alignment === 'center') {
               currentX = pageWidth / 2;
             } else if (alignment === 'right') {
-              currentX = pageWidth - margin;
+              currentX = pageWidth - PDF_CONSTANTS.MARGIN;
             }
 
             // Render formatted text segments
-            await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, margin, pageWidth, lineHeight);
+            await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, PDF_CONSTANTS.MARGIN, pageWidth, PDF_CONSTANTS.DEFAULT_LINE_HEIGHT);
 
             // Process inline images if any
             if (block.images && block.images.length > 0) {
@@ -447,8 +465,8 @@ async function generateAdvancedTextPdf() {
                     const maxInlineImageWidth = maxWidth / 2; // Smaller for inline images
                     const maxInlineImageHeight = 50;
 
-                    let imgWidth = imageData.width * 0.264583;
-                    let imgHeight = imageData.height * 0.264583;
+                    let imgWidth = imageData.width * PDF_CONSTANTS.PIXELS_TO_MM;
+                    let imgHeight = imageData.height * PDF_CONSTANTS.PIXELS_TO_MM;
 
                     if (imgWidth > maxInlineImageWidth) {
                       const ratio = maxInlineImageWidth / imgWidth;
@@ -462,12 +480,12 @@ async function generateAdvancedTextPdf() {
                       imgWidth *= ratio;
                     }
 
-                    if (currentY + imgHeight > pageHeight - margin) {
+                    if (currentY + imgHeight > pageHeight - PDF_CONSTANTS.MARGIN) {
                       pdf.addPage();
-                      currentY = margin;
+                      currentY = PDF_CONSTANTS.MARGIN;
                     }
 
-                    pdf.addImage(imageData.data, 'JPEG', margin, currentY, imgWidth, imgHeight);
+                    pdf.addImage(imageData.data, 'JPEG', PDF_CONSTANTS.MARGIN, currentY, imgWidth, imgHeight);
                     currentY += imgHeight + 5;
                   }
                 } catch (error) {
@@ -478,7 +496,7 @@ async function generateAdvancedTextPdf() {
 
             // Calculate text height for currentY adjustment
             const textLines = pdf.splitTextToSize(lineText, maxWidth);
-            currentY += textLines.length * lineHeight + paragraphSpacing;
+            currentY += textLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
           }
           break;
 
@@ -503,8 +521,8 @@ async function generateAdvancedTextPdf() {
           }
 
           const listLines = pdf.splitTextToSize(bullet + listText, maxWidth - 15);
-          pdf.text(listLines, margin + 10, currentY);
-          currentY += listLines.length * lineHeight + 3;
+          pdf.text(listLines, PDF_CONSTANTS.MARGIN + 10, currentY);
+          currentY += listLines.length * PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + 3;
           break;
 
         case 'image':
@@ -520,8 +538,8 @@ async function generateAdvancedTextPdf() {
                 const maxImageWidth = maxWidth;
                 const maxImageHeight = 100; // Max height in mm
 
-                let imgWidth = imageData.width * 0.264583; // Convert pixels to mm (96 DPI)
-                let imgHeight = imageData.height * 0.264583;
+                let imgWidth = imageData.width * PDF_CONSTANTS.PIXELS_TO_MM;
+                let imgHeight = imageData.height * PDF_CONSTANTS.PIXELS_TO_MM;
 
                 // Scale down if too large
                 if (imgWidth > maxImageWidth) {
@@ -537,21 +555,21 @@ async function generateAdvancedTextPdf() {
                 }
 
                 // Check if image fits on current page
-                if (currentY + imgHeight > pageHeight - margin) {
+                if (currentY + imgHeight > pageHeight - PDF_CONSTANTS.MARGIN) {
                   pdf.addPage();
-                  currentY = margin;
+                  currentY = PDF_CONSTANTS.MARGIN;
                 }
 
                 // Add the image to PDF
-                pdf.addImage(imageData.data, 'JPEG', margin, currentY, imgWidth, imgHeight);
-                currentY += imgHeight + paragraphSpacing;
+                pdf.addImage(imageData.data, 'JPEG', PDF_CONSTANTS.MARGIN, currentY, imgWidth, imgHeight);
+                currentY += imgHeight + PDF_CONSTANTS.PARAGRAPH_SPACING;
               } else {
                 // Fallback to placeholder text
                 pdf.setFont('helvetica', 'italic');
                 pdf.setFontSize(10);
-                pdf.setTextColor(128, 128, 128);
-                pdf.text('[Image: Unable to load - ' + imageSegment.src + ']', margin, currentY);
-                currentY += lineHeight + paragraphSpacing;
+                pdf.setTextColor(PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.r, PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.g, PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.b);
+                pdf.text('[Image: Unable to load - ' + imageSegment.src + ']', PDF_CONSTANTS.MARGIN, currentY);
+                currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
               }
             }
           } catch (error) {
@@ -559,9 +577,9 @@ async function generateAdvancedTextPdf() {
             // Fallback to placeholder text
             pdf.setFont('helvetica', 'italic');
             pdf.setFontSize(10);
-            pdf.setTextColor(128, 128, 128);
-            pdf.text('[Image: Error loading]', margin, currentY);
-            currentY += lineHeight + paragraphSpacing;
+            pdf.setTextColor(PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.r, PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.g, PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.b);
+            pdf.text('[Image: Error loading]', PDF_CONSTANTS.MARGIN, currentY);
+            currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
           }
           break;
 
@@ -577,7 +595,7 @@ async function generateAdvancedTextPdf() {
 
     // Download the PDF
     const pdfBlob = pdf.output('blob');
-    downloadFile(pdfBlob, `document-${new Date().toISOString().slice(0, 10)}.pdf`);
+    downloadFile(pdfBlob, generateFilename());
 
   } catch (error) {
     console.error('Advanced text PDF generation failed:', error);
@@ -693,6 +711,101 @@ function parseQuillDelta(delta: any): any[] {
   return content;
 }
 
+function generatePrintCSS(): string {
+  return `
+    @page {
+      margin: 20mm;
+      size: A4;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+      font-size: 12pt;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      background: white;
+    }
+    
+    /* Headers */
+    h1 { font-size: 24pt; font-weight: bold; margin: 16pt 0 12pt 0; line-height: 1.3; }
+    h2 { font-size: 20pt; font-weight: bold; margin: 14pt 0 10pt 0; line-height: 1.3; }
+    h3 { font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt 0; line-height: 1.3; }
+    h4 { font-size: 16pt; font-weight: bold; margin: 10pt 0 6pt 0; line-height: 1.3; }
+    h5 { font-size: 14pt; font-weight: bold; margin: 8pt 0 6pt 0; line-height: 1.3; }
+    h6 { font-size: 13pt; font-weight: bold; margin: 8pt 0 6pt 0; line-height: 1.3; }
+    
+    /* Text formatting */
+    strong, b { font-weight: bold !important; }
+    em, i { font-style: italic !important; }
+    u { text-decoration: underline !important; }
+    s { text-decoration: line-through !important; }
+    
+    /* Font sizes */
+    .ql-size-small { font-size: 10pt !important; }
+    .ql-size-large { font-size: 18pt !important; }
+    .ql-size-huge { font-size: 32pt !important; }
+    
+    /* Text alignment */
+    .ql-align-center { text-align: center; }
+    .ql-align-right { text-align: right; }
+    .ql-align-justify { text-align: justify; }
+    
+    /* Lists */
+    ul, ol { margin: 8pt 0; padding-left: 20pt; }
+    li { margin: 4pt 0; }
+    
+    /* Blockquotes */
+    blockquote {
+      margin: 12pt 20pt;
+      padding: 8pt 16pt;
+      border-left: 4pt solid #ddd;
+      background: #f9f9f9;
+      font-style: italic;
+    }
+    
+    /* Code blocks */
+    pre, .ql-code-block {
+      background: #f5f5f5;
+      border: 1pt solid #ddd;
+      border-radius: 4pt;
+      padding: 12pt;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 10pt;
+      margin: 8pt 0;
+    }
+    
+    /* Indentation */
+    .ql-indent-1 { padding-left: 20pt; }
+    .ql-indent-2 { padding-left: 40pt; }
+    .ql-indent-3 { padding-left: 60pt; }
+    .ql-indent-4 { padding-left: 80pt; }
+    .ql-indent-5 { padding-left: 100pt; }
+    .ql-indent-6 { padding-left: 120pt; }
+    .ql-indent-7 { padding-left: 140pt; }
+    .ql-indent-8 { padding-left: 160pt; }
+    
+    /* Links */
+    a { color: #0066cc; text-decoration: underline; }
+    
+    /* Images */
+    img { max-width: 100%; height: auto; margin: 8pt 0; }
+    
+    /* Paragraphs */
+    p { margin: 6pt 0; }
+    
+    /* Superscript and subscript */
+    sup { vertical-align: super; font-size: 0.75em; }
+    sub { vertical-align: sub; font-size: 0.75em; }
+    
+    /* Print-specific styles */
+    @media print {
+      body { -webkit-print-color-adjust: exact; }
+    }
+  `;
+}
+
 function usePrintToPdf() {
   const printWin = window.open('', '_blank');
   if (!printWin) {
@@ -700,7 +813,6 @@ function usePrintToPdf() {
     return;
   }
 
-  // Get the processed HTML content
   const processedHtml = extractAndProcessHtmlContent();
 
   printWin.document.write(`
@@ -709,98 +821,7 @@ function usePrintToPdf() {
       <head>
         <title>Document</title>
         <meta charset="utf-8">
-        <style>
-          @page {
-            margin: 20mm;
-            size: A4;
-          }
-          
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-            font-size: 12pt;
-            line-height: 1.6;
-            color: #333;
-            margin: 0;
-            padding: 0;
-            background: white;
-          }
-          
-          /* Headers */
-          h1 { font-size: 24pt; font-weight: bold; margin: 16pt 0 12pt 0; line-height: 1.3; }
-          h2 { font-size: 20pt; font-weight: bold; margin: 14pt 0 10pt 0; line-height: 1.3; }
-          h3 { font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt 0; line-height: 1.3; }
-          h4 { font-size: 16pt; font-weight: bold; margin: 10pt 0 6pt 0; line-height: 1.3; }
-          h5 { font-size: 14pt; font-weight: bold; margin: 8pt 0 6pt 0; line-height: 1.3; }
-          h6 { font-size: 13pt; font-weight: bold; margin: 8pt 0 6pt 0; line-height: 1.3; }
-          
-          /* Text formatting */
-          strong, b { font-weight: bold !important; }
-          em, i { font-style: italic !important; }
-          u { text-decoration: underline !important; }
-          s { text-decoration: line-through !important; }
-          
-          /* Font sizes */
-          .ql-size-small { font-size: 10pt !important; }
-          .ql-size-large { font-size: 18pt !important; }
-          .ql-size-huge { font-size: 32pt !important; }
-          
-          /* Text alignment */
-          .ql-align-center { text-align: center; }
-          .ql-align-right { text-align: right; }
-          .ql-align-justify { text-align: justify; }
-          
-          /* Lists */
-          ul, ol { margin: 8pt 0; padding-left: 20pt; }
-          li { margin: 4pt 0; }
-          
-          /* Blockquotes */
-          blockquote {
-            margin: 12pt 20pt;
-            padding: 8pt 16pt;
-            border-left: 4pt solid #ddd;
-            background: #f9f9f9;
-            font-style: italic;
-          }
-          
-          /* Code blocks */
-          pre, .ql-code-block {
-            background: #f5f5f5;
-            border: 1pt solid #ddd;
-            border-radius: 4pt;
-            padding: 12pt;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 10pt;
-            margin: 8pt 0;
-          }
-          
-          /* Indentation */
-          .ql-indent-1 { padding-left: 20pt; }
-          .ql-indent-2 { padding-left: 40pt; }
-          .ql-indent-3 { padding-left: 60pt; }
-          .ql-indent-4 { padding-left: 80pt; }
-          .ql-indent-5 { padding-left: 100pt; }
-          .ql-indent-6 { padding-left: 120pt; }
-          .ql-indent-7 { padding-left: 140pt; }
-          .ql-indent-8 { padding-left: 160pt; }
-          
-          /* Links */
-          a { color: #0066cc; text-decoration: underline; }
-          
-          /* Images */
-          img { max-width: 100%; height: auto; margin: 8pt 0; }
-          
-          /* Paragraphs */
-          p { margin: 6pt 0; }
-          
-          /* Superscript and subscript */
-          sup { vertical-align: super; font-size: 0.75em; }
-          sub { vertical-align: sub; font-size: 0.75em; }
-          
-          /* Print-specific styles */
-          @media print {
-            body { -webkit-print-color-adjust: exact; }
-          }
-        </style>
+        <style>${generatePrintCSS()}</style>
       </head>
       <body>
         ${processedHtml}
