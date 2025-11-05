@@ -75,23 +75,6 @@ export function mountHtmlToPdfTool() {
 
   container.innerHTML = `
     <div class="p-6 flex flex-col">
-      <div id="toolbar" class="mb-2 flex flex-wrap gap-1">
-        <select class="ql-header" title="Heading">
-          <option value="1">H1</option>
-          <option value="2">H2</option>
-          <option value="3">H3</option>
-          <option selected></option>
-        </select>
-        <button class="ql-bold" title="Bold"></button>
-        <button class="ql-italic" title="Italic"></button>
-        <button class="ql-underline" title="Underline"></button>
-        <button class="ql-list" value="ordered" title="Ordered List"></button>
-        <button class="ql-list" value="bullet" title="Bullet List"></button>
-        <button class="ql-link" title="Link"></button>
-        <button class="ql-image" title="Image"></button>
-        <button class="ql-clean" title="Clear Format"></button>
-      </div>
-
       <div id="editor" class="bg-white flex-1 border-2 border-gray-300 rounded-lg overflow-hidden min-h-96"></div>
     </div>
 
@@ -103,7 +86,23 @@ export function mountHtmlToPdfTool() {
 
   quill = new Quill('#editor', {
     theme: 'snow',
-    modules: { toolbar: '#toolbar' },
+    modules: {
+      toolbar: [
+        [{ 'font': [] }],
+        [{ 'size': ['small', false, 'large', 'huge'] }],
+        [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        [{ 'color': [] }, { 'background': [] }],
+        [{ 'script': 'sub'}, { 'script': 'super' }],
+        [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'list': 'check' }],
+        [{ 'indent': '-1'}, { 'indent': '+1' }],
+        [{ 'direction': 'rtl' }],
+        [{ 'align': [] }],
+        ['blockquote', 'code-block'],
+        ['link', 'image'],
+        ['clean']
+      ]
+    },
     placeholder: 'Start typing your document…',
   });
 

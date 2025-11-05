@@ -27,3 +27,4 @@ coverage/
 *.lcov
 
 .env.development
+/pnpm-lock.yaml
