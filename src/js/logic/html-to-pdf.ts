@@ -29,27 +29,24 @@ const PDF_CONSTANTS = {
 let quill: Quill;
 
 // Utility functions
-function rgbToHex(rgb: string): string {
+const rgbToHex = (rgb: string): string => {
   const [r, g, b] = rgb.split(',').map((n: string) => parseInt(n.trim()));
   return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
-}
+};
 
-function parseColor(colorStr?: string): { r: number; g: number; b: number } {
-  if (!colorStr) return PDF_CONSTANTS.DEFAULT_COLORS.BLACK;
+const parseColor = (colorStr?: string): { r: number; g: number; b: number } => {
+  if (!colorStr || !colorStr.startsWith('#')) return PDF_CONSTANTS.DEFAULT_COLORS.BLACK;
 
   try {
-    if (colorStr.startsWith('#')) {
-      return {
-        r: parseInt(colorStr.slice(1, 3), 16),
-        g: parseInt(colorStr.slice(3, 5), 16),
-        b: parseInt(colorStr.slice(5, 7), 16)
-      };
-    }
-    return PDF_CONSTANTS.DEFAULT_COLORS.BLACK;
+    return {
+      r: parseInt(colorStr.slice(1, 3), 16),
+      g: parseInt(colorStr.slice(3, 5), 16),
+      b: parseInt(colorStr.slice(5, 7), 16)
+    };
   } catch {
     return PDF_CONSTANTS.DEFAULT_COLORS.BLACK;
   }
-}
+};
 
 function generateFilename(): string {
   return `document-${new Date().toISOString().slice(0, 10)}.pdf`;
@@ -66,88 +63,120 @@ async function generateTextPDF() {
   }
 }
 
-function extractAndProcessHtmlContent(): string {
+const extractAndProcessHtmlContent = (): string => {
   let htmlContent = quill.root.innerHTML;
 
   // Process inline styles to ensure they work in PDF
   htmlContent = htmlContent.replace(/style="([^"]*)"/g, (match, styles) => {
-    // Convert inline styles to more PDF-friendly format
-    let processedStyles = styles
-      // Convert RGB colors to hex
-      .replace(/color:\s*rgb\(([^)]+)\)/g, (colorMatch: string, rgb: string) => {
-        const [r, g, b] = rgb.split(',').map((n: string) => parseInt(n.trim()));
-        const hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
-        return `color: ${hex}`;
+    const processedStyles = styles
+      // Convert RGB colors to hex (both color and background-color)
+      .replace(/(background-)?color:\s*rgb\(([^)]+)\)/g, (colorMatch: string, bgPrefix: string, rgb: string) => {
+        const hex = rgbToHex(rgb);
+        return `${bgPrefix || ''}color: ${hex}`;
       })
-      .replace(/background-color:\s*rgb\(([^)]+)\)/g, (bgMatch: string, rgb: string) => {
-        const [r, g, b] = rgb.split(',').map((n: string) => parseInt(n.trim()));
-        const hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
-        return `background-color: ${hex}`;
-      })
-      // Ensure font-size values are in points for better PDF rendering
-      .replace(/font-size:\s*(\d+(?:\.\d+)?)em/g, (fsMatch: string, em: string) => {
-        const pts = Math.round(parseFloat(em) * 12); // Convert em to approximate points
-        return `font-size: ${pts}pt`;
-      })
-      // Clean up any redundant spaces
+      // Convert em to points
+      .replace(/font-size:\s*(\d+(?:\.\d+)?)em/g, (_, em: string) =>
+        `font-size: ${Math.round(parseFloat(em) * PDF_CONSTANTS.EM_TO_POINTS)}pt`
+      )
       .replace(/\s+/g, ' ')
       .trim();
 
     return `style="${processedStyles}"`;
   });
 
-  // Convert any remaining class-based formatting to inline styles for better PDF compatibility
-  htmlContent = htmlContent
-    // Handle Quill's text alignment classes
-    .replace(/<p([^>]*)\sclass="([^"]*ql-align-center[^"]*)"([^>]*)>/g, '<p$1 style="text-align: center;"$3>')
-    .replace(/<p([^>]*)\sclass="([^"]*ql-align-right[^"]*)"([^>]*)>/g, '<p$1 style="text-align: right;"$3>')
-    .replace(/<p([^>]*)\sclass="([^"]*ql-align-justify[^"]*)"([^>]*)>/g, '<p$1 style="text-align: justify;"$3>');
+  // Convert class-based alignment to inline styles
+  const alignmentMap = {
+    center: 'center',
+    right: 'right',
+    justify: 'justify'
+  };
+
+  Object.entries(alignmentMap).forEach(([cls, align]) => {
+    const regex = new RegExp(`<p([^>]*)\\sclass="([^"]*ql-align-${cls}[^"]*)"([^>]*)>`, 'g');
+    htmlContent = htmlContent.replace(regex, `<p$1 style="text-align: ${align};"$3>`);
+  });
 
   return htmlContent;
-}
+};
 
-async function loadImageAsBase64(src: string): Promise<{ data: string; width: number; height: number } | null> {
+const loadImageAsBase64 = (src: string): Promise<{ data: string; width: number; height: number } | null> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
 
-    img.onload = function() {
+    const handleError = (error?: any) => {
+      console.warn('Error loading/converting image:', src, error);
+      resolve(null);
+    };
+
+    img.onload = () => {
       try {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(null);
-          return;
-        }
+        if (!ctx) return handleError('No canvas context');
 
         canvas.width = img.width;
         canvas.height = img.height;
         ctx.drawImage(img, 0, 0);
 
-        const dataURL = canvas.toDataURL('image/jpeg', 0.8);
         resolve({
-          data: dataURL,
+          data: canvas.toDataURL('image/jpeg', 0.8),
           width: img.width,
           height: img.height
         });
       } catch (error) {
-        console.warn('Error converting image to base64:', error);
-        resolve(null);
+        handleError(error);
       }
     };
 
-    img.onerror = function() {
-      console.warn('Error loading image:', src);
-      resolve(null);
-    };
-
+    img.onerror = () => handleError();
     img.src = src;
   });
-}
+};
 
 
 
-async function renderFormattedText(
+const calculateScriptFormatting = (segment: any) => {
+  let adjustedFontSize = segment.fontSize;
+  let yOffset = 0;
+
+  if (segment.script === 'super') {
+    adjustedFontSize = segment.fontSize * PDF_CONSTANTS.SUPERSCRIPT_SCALE;
+    yOffset = -(segment.fontSize * PDF_CONSTANTS.SUPERSCRIPT_OFFSET);
+  } else if (segment.script === 'sub') {
+    adjustedFontSize = segment.fontSize * PDF_CONSTANTS.SUBSCRIPT_SCALE;
+    yOffset = segment.fontSize * PDF_CONSTANTS.SUBSCRIPT_OFFSET;
+  }
+
+  return { adjustedFontSize, yOffset };
+};
+
+const getAlignedX = (alignment: string, currentX: number, lineWidth: number, pageWidth: number, margin: number): number => {
+  switch (alignment) {
+    case 'center': return pageWidth / 2 - lineWidth / 2;
+    case 'right': return pageWidth - margin - lineWidth;
+    default: return currentX;
+  }
+};
+
+const renderTextDecorations = (pdf: any, segment: any, renderX: number, currentY: number, yOffset: number, lineWidth: number, adjustedFontSize: number) => {
+  const { r, g, b } = segment.textColor;
+  pdf.setDrawColor(r, g, b);
+
+  if (segment.underline) {
+    const underlineY = currentY + yOffset + 1;
+    pdf.setLineWidth(0.2);
+    pdf.line(renderX, underlineY, renderX + lineWidth, underlineY);
+  }
+
+  if (segment.strike) {
+    const strikeY = currentY + yOffset - (adjustedFontSize * 0.1);
+    pdf.setLineWidth(0.3);
+    pdf.line(renderX, strikeY, renderX + lineWidth, strikeY);
+  }
+};
+
+const renderFormattedText = (
   pdf: any,
   formattedSegments: any[],
   fullText: string,
@@ -159,27 +188,14 @@ async function renderFormattedText(
   margin: number,
   pageWidth: number,
   lineHeight: number = PDF_CONSTANTS.DEFAULT_LINE_HEIGHT
-) {
-  if (formattedSegments.length === 0) return;
+) => {
+  if (!formattedSegments.length) return;
 
-  // For simplicity, if we have multiple segments with different formatting,
-  // render them sequentially rather than trying to mix them on the same line
   let currentX = startX;
   let currentY = startY;
 
   for (const segment of formattedSegments) {
-    // Set font properties with script adjustments
-    let adjustedFontSize = segment.fontSize;
-    let yOffset = 0;
-
-    // Handle superscript and subscript with more distinct positioning
-    if (segment.script === 'super') {
-      adjustedFontSize = segment.fontSize * PDF_CONSTANTS.SUPERSCRIPT_SCALE;
-      yOffset = -(segment.fontSize * PDF_CONSTANTS.SUPERSCRIPT_OFFSET);
-    } else if (segment.script === 'sub') {
-      adjustedFontSize = segment.fontSize * PDF_CONSTANTS.SUBSCRIPT_SCALE;
-      yOffset = segment.fontSize * PDF_CONSTANTS.SUBSCRIPT_OFFSET;
-    }
+    const { adjustedFontSize, yOffset } = calculateScriptFormatting(segment);
 
     pdf.setFont(segment.fontFamily, segment.fontStyle);
     pdf.setFontSize(adjustedFontSize);
@@ -188,62 +204,65 @@ async function renderFormattedText(
     // Handle background color
     if (segment.backgroundColor) {
       const textWidth = pdf.getTextWidth(segment.text);
-      const textHeight = segment.fontSize * 0.352778; // Convert points to mm
-
-      // Draw background rectangle
+      const textHeight = segment.fontSize * 0.352778;
       pdf.setFillColor(segment.backgroundColor.r, segment.backgroundColor.g, segment.backgroundColor.b);
       pdf.rect(currentX, currentY - textHeight, textWidth, textHeight * 1.2, 'F');
     }
 
-    // Render the text
     const textLines = pdf.splitTextToSize(segment.text, maxWidth);
 
-    for (let i = 0; i < textLines.length; i++) {
-      const line = textLines[i];
+    textLines.forEach((line: string, i: number) => {
       const lineWidth = pdf.getTextWidth(line);
+      const renderX = getAlignedX(alignment, currentX, lineWidth, pageWidth, margin);
 
-      // Handle alignment for each line
-      let renderX = currentX;
-      if (alignment === 'center') {
-        renderX = pageWidth / 2 - lineWidth / 2;
-      } else if (alignment === 'right') {
-        renderX = pageWidth - margin - lineWidth;
-      }
-
-      // Render text with script offset
       pdf.text(line, renderX, currentY + yOffset);
-
-      // Add underline if needed
-      if (segment.underline) {
-        const underlineY = currentY + yOffset + 1;
-        pdf.setDrawColor(segment.textColor.r, segment.textColor.g, segment.textColor.b);
-        pdf.setLineWidth(0.2);
-        pdf.line(renderX, underlineY, renderX + lineWidth, underlineY);
-      }
-
-      // Add strikethrough if needed
-      if (segment.strike) {
-        const strikeY = currentY + yOffset - (adjustedFontSize * 0.1);
-        pdf.setDrawColor(segment.textColor.r, segment.textColor.g, segment.textColor.b);
-        pdf.setLineWidth(0.3); // Make line thicker for better visibility
-        pdf.line(renderX, strikeY, renderX + lineWidth, strikeY);
-      }
+      renderTextDecorations(pdf, segment, renderX, currentY, yOffset, lineWidth, adjustedFontSize);
 
       if (i < textLines.length - 1) {
         currentY += lineHeight;
       }
-    }
+    });
 
-    // Move X position for next segment (if on same line)
+    // Position for next segment
     if (textLines.length === 1) {
       currentX += pdf.getTextWidth(segment.text);
     } else {
-      // Multiple lines, reset X and adjust Y
       currentX = startX;
       currentY += lineHeight;
     }
   }
-}
+};
+
+const getFontStyle = (attrs: any): string => {
+  if (attrs.bold && attrs.italic) return 'bolditalic';
+  if (attrs.bold) return 'bold';
+  if (attrs.italic) return 'italic';
+  return 'normal';
+};
+
+const getFontSize = (blockType: string, attrs: any): number => {
+  let baseSize = blockType === 'code' ? 10 : blockType === 'blockquote' ? 11 : 12;
+
+  if (attrs.size === 'small') return Math.max(8, baseSize - 2);
+  if (attrs.size === 'large') return baseSize + 4;
+  if (attrs.size === 'huge') return baseSize + 8;
+
+  return baseSize;
+};
+
+const getFontFamily = (blockType: string, attrs: any): string => {
+  if (blockType === 'code' || attrs.font === 'monospace') return 'courier';
+  if (attrs.font === 'serif') return 'times';
+  return 'helvetica';
+};
+
+const renderImagePlaceholder = (pdf: any, message: string, currentY: number): number => {
+  pdf.setFont('helvetica', 'italic');
+  pdf.setFontSize(10);
+  pdf.setTextColor(PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.r, PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.g, PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.b);
+  pdf.text(`[Image: ${message}]`, PDF_CONSTANTS.MARGIN, currentY);
+  return currentY + PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
+};
 
 async function generateAdvancedTextPdf() {
   try {
@@ -326,28 +345,9 @@ async function generateAdvancedTextPdf() {
             const segmentText = segment.text || '';
             if (!segmentText) continue;
 
-            // Set font style based on attributes
-            let fontStyle = 'normal';
-            if (attrs.bold && attrs.italic) fontStyle = 'bolditalic';
-            else if (attrs.bold) fontStyle = 'bold';
-            else if (attrs.italic) fontStyle = 'italic';
-
-            // Set font size based on attributes
-            let segmentSize = block.type === 'code' ? 10 :
-                            block.type === 'blockquote' ? 11 : 12;
-            if (attrs.size === 'small') segmentSize = Math.max(8, segmentSize - 2);
-            else if (attrs.size === 'large') segmentSize = segmentSize + 4;
-            else if (attrs.size === 'huge') segmentSize = segmentSize + 8;
-
-            // Determine font family
-            let fontFamily = 'helvetica';
-            if (block.type === 'code') {
-              fontFamily = 'courier';
-            } else if (attrs.font === 'serif') {
-              fontFamily = 'times';
-            } else if (attrs.font === 'monospace') {
-              fontFamily = 'courier';
-            }
+            const fontStyle = getFontStyle(attrs);
+            const segmentSize = getFontSize(block.type, attrs);
+            const fontFamily = getFontFamily(block.type, attrs);
 
             // Parse colors
             let textColor = parseColor(attrs.color);
@@ -564,22 +564,12 @@ async function generateAdvancedTextPdf() {
                 pdf.addImage(imageData.data, 'JPEG', PDF_CONSTANTS.MARGIN, currentY, imgWidth, imgHeight);
                 currentY += imgHeight + PDF_CONSTANTS.PARAGRAPH_SPACING;
               } else {
-                // Fallback to placeholder text
-                pdf.setFont('helvetica', 'italic');
-                pdf.setFontSize(10);
-                pdf.setTextColor(PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.r, PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.g, PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.b);
-                pdf.text('[Image: Unable to load - ' + imageSegment.src + ']', PDF_CONSTANTS.MARGIN, currentY);
-                currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
+                currentY = renderImagePlaceholder(pdf, `Unable to load - ${imageSegment.src}`, currentY);
               }
             }
           } catch (error) {
             console.warn('Error handling image in PDF:', error);
-            // Fallback to placeholder text
-            pdf.setFont('helvetica', 'italic');
-            pdf.setFontSize(10);
-            pdf.setTextColor(PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.r, PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.g, PDF_CONSTANTS.DEFAULT_COLORS.PLACEHOLDER_GRAY.b);
-            pdf.text('[Image: Error loading]', PDF_CONSTANTS.MARGIN, currentY);
-            currentY += PDF_CONSTANTS.DEFAULT_LINE_HEIGHT + PDF_CONSTANTS.PARAGRAPH_SPACING;
+            currentY = renderImagePlaceholder(pdf, 'Error loading', currentY);
           }
           break;
 
