@@ -103,6 +103,94 @@ async function loadImageAsBase64(src: string): Promise<{ data: string; width: nu
   });
 }
 
+
+
+async function renderFormattedText(
+  pdf: any,
+  formattedSegments: any[],
+  fullText: string,
+  startX: number,
+  startY: number,
+  maxWidth: number,
+  alignment: string,
+  blockType: string,
+  margin: number,
+  pageWidth: number,
+  lineHeight: number = 7
+) {
+  if (formattedSegments.length === 0) return;
+
+  // For simplicity, if we have multiple segments with different formatting,
+  // render them sequentially rather than trying to mix them on the same line
+  let currentX = startX;
+  let currentY = startY;
+
+  for (const segment of formattedSegments) {
+    // Set font properties
+    pdf.setFont(segment.fontFamily, segment.fontStyle);
+    pdf.setFontSize(segment.fontSize);
+    pdf.setTextColor(segment.textColor.r, segment.textColor.g, segment.textColor.b);
+
+    // Handle background color
+    if (segment.backgroundColor) {
+      const textWidth = pdf.getTextWidth(segment.text);
+      const textHeight = segment.fontSize * 0.352778; // Convert points to mm
+
+      // Draw background rectangle
+      pdf.setFillColor(segment.backgroundColor.r, segment.backgroundColor.g, segment.backgroundColor.b);
+      pdf.rect(currentX, currentY - textHeight, textWidth, textHeight * 1.2, 'F');
+    }
+
+    // Render the text
+    const textLines = pdf.splitTextToSize(segment.text, maxWidth);
+
+    for (let i = 0; i < textLines.length; i++) {
+      const line = textLines[i];
+      const lineWidth = pdf.getTextWidth(line);
+
+      // Handle alignment for each line
+      let renderX = currentX;
+      if (alignment === 'center') {
+        renderX = pageWidth / 2 - lineWidth / 2;
+      } else if (alignment === 'right') {
+        renderX = pageWidth - margin - lineWidth;
+      }
+
+      // Render text
+      pdf.text(line, renderX, currentY);
+
+      // Add underline if needed
+      if (segment.underline) {
+        const underlineY = currentY + 1;
+        pdf.setDrawColor(segment.textColor.r, segment.textColor.g, segment.textColor.b);
+        pdf.setLineWidth(0.2);
+        pdf.line(renderX, underlineY, renderX + lineWidth, underlineY);
+      }
+
+      // Add strikethrough if needed
+      if (segment.strike) {
+        const strikeY = currentY - (segment.fontSize * 0.176389); // Half the font size in mm
+        pdf.setDrawColor(segment.textColor.r, segment.textColor.g, segment.textColor.b);
+        pdf.setLineWidth(0.2);
+        pdf.line(renderX, strikeY, renderX + lineWidth, strikeY);
+      }
+
+      if (i < textLines.length - 1) {
+        currentY += lineHeight;
+      }
+    }
+
+    // Move X position for next segment (if on same line)
+    if (textLines.length === 1) {
+      currentX += pdf.getTextWidth(segment.text);
+    } else {
+      // Multiple lines, reset X and adjust Y
+      currentX = startX;
+      currentY += lineHeight;
+    }
+  }
+}
+
 async function generateAdvancedTextPdf() {
   try {
     const { jsPDF } = await import('jspdf');
@@ -159,6 +247,9 @@ async function generateAdvancedTextPdf() {
           let lineText = '';
           let currentX = startX;
 
+          // Store formatted text segments for proper rendering
+          const formattedSegments: any[] = [];
+
           for (const segment of block.segments) {
             const attrs = segment.attributes || {};
 
@@ -181,7 +272,10 @@ async function generateAdvancedTextPdf() {
               continue;
             }
 
-            // Handle regular text segments
+            // Handle regular text segments with proper formatting
+            const segmentText = segment.text || '';
+            if (!segmentText) continue;
+
             // Set font style based on attributes
             let fontStyle = 'normal';
             if (attrs.bold && attrs.italic) fontStyle = 'bolditalic';
@@ -195,48 +289,84 @@ async function generateAdvancedTextPdf() {
             else if (attrs.size === 'large') segmentSize = segmentSize + 4;
             else if (attrs.size === 'huge') segmentSize = segmentSize + 8;
 
-            // Set font based on block type and attributes
+            // Determine font family
+            let fontFamily = 'helvetica';
             if (block.type === 'code') {
-              pdf.setFont('courier', fontStyle);
-            } else if (block.type === 'blockquote') {
-              pdf.setFont('helvetica', 'italic');
-            } else {
-              pdf.setFont('helvetica', fontStyle);
+              fontFamily = 'courier';
+            } else if (attrs.font === 'serif') {
+              fontFamily = 'times';
+            } else if (attrs.font === 'monospace') {
+              fontFamily = 'courier';
             }
 
-            pdf.setFontSize(segmentSize);
-
-            // Set text color if specified
+            // Parse colors
+            let textColor = { r: 0, g: 0, b: 0 }; // Default black
             if (attrs.color) {
               try {
                 const color = attrs.color.startsWith('#') ? attrs.color : '#000000';
-                const r = parseInt(color.slice(1, 3), 16);
-                const g = parseInt(color.slice(3, 5), 16);
-                const b = parseInt(color.slice(5, 7), 16);
-                pdf.setTextColor(r, g, b);
+                textColor = {
+                  r: parseInt(color.slice(1, 3), 16),
+                  g: parseInt(color.slice(3, 5), 16),
+                  b: parseInt(color.slice(5, 7), 16)
+                };
               } catch (e) {
-                pdf.setTextColor(0, 0, 0); // Default to black
+                textColor = { r: 0, g: 0, b: 0 };
               }
-            } else {
-              pdf.setTextColor(0, 0, 0);
             }
 
-            // Handle link formatting (underline and blue color)
+            // Handle link formatting (override color with blue)
             if (attrs.link) {
-              pdf.setTextColor(0, 102, 204); // Blue color for links
-              const linkText = segment.text || attrs.link;
-              lineText += linkText;
+              textColor = { r: 0, g: 102, b: 204 }; // Blue color for links
 
-              // Store link info for later processing (after we know the position)
+              // Store link info for later processing
               if (!block.links) block.links = [];
               block.links.push({
-                text: linkText,
+                text: segmentText,
                 url: attrs.link,
-                startIndex: lineText.length - linkText.length
+                startIndex: lineText.length,
+                length: segmentText.length
               });
-            } else {
-              lineText += segment.text || '';
             }
+
+            // Parse background color
+            let backgroundColor = null;
+            if (attrs.background) {
+              try {
+                const bgColor = attrs.background.startsWith('#') ? attrs.background : null;
+                if (bgColor && bgColor !== '#000000') { // Don't render black backgrounds
+                  backgroundColor = {
+                    r: parseInt(bgColor.slice(1, 3), 16),
+                    g: parseInt(bgColor.slice(3, 5), 16),
+                    b: parseInt(bgColor.slice(5, 7), 16)
+                  };
+                }
+              } catch (e) {
+                backgroundColor = null;
+              }
+            }
+
+            // Store formatted segment for rendering
+            formattedSegments.push({
+              text: segmentText,
+              fontFamily,
+              fontStyle,
+              fontSize: segmentSize,
+              textColor,
+              backgroundColor,
+              underline: attrs.underline || false,
+              strike: attrs.strike || false,
+              startIndex: lineText.length,
+              endIndex: lineText.length + segmentText.length
+            });
+
+            lineText += segmentText;
+          }
+
+          // Now render the text with proper formatting
+          if (formattedSegments.length > 0) {
+
+            // Render formatted text segments
+            await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, margin, pageWidth);
           }
 
           // Handle different block types with visual indicators
@@ -256,7 +386,8 @@ async function generateAdvancedTextPdf() {
             pdf.setLineWidth(2);
             pdf.line(margin + 5, currentY - 4, margin + 5, currentY - 4 + blockHeight);
 
-            pdf.text(textLines, startX, currentY);
+            // Render formatted text
+            await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, quoteWidth, 'left', block.type, margin, pageWidth, lineHeight);
             currentY += textLines.length * lineHeight + paragraphSpacing + 4;
 
           } else if (block.type === 'code') {
@@ -275,7 +406,8 @@ async function generateAdvancedTextPdf() {
             pdf.setLineWidth(0.5);
             pdf.rect(margin, currentY - 4, codeWidth + 10, blockHeight, 'S');
 
-            pdf.text(textLines, startX, currentY);
+            // Render formatted text
+            await renderFormattedText(pdf, formattedSegments, lineText, startX, currentY, codeWidth, 'left', block.type, margin, pageWidth, lineHeight);
             currentY += textLines.length * lineHeight + paragraphSpacing + 4;
 
           } else {
@@ -287,12 +419,8 @@ async function generateAdvancedTextPdf() {
               currentX = pageWidth - margin;
             }
 
-            // Split text into lines and render
-            const textLines = pdf.splitTextToSize(lineText, maxWidth);
-            const alignOption = alignment === 'center' ? 'center' :
-                               alignment === 'right' ? 'right' : 'left';
-
-            pdf.text(textLines, currentX, currentY, { align: alignOption });
+            // Render formatted text segments
+            await renderFormattedText(pdf, formattedSegments, lineText, currentX, currentY, maxWidth, alignment, block.type, margin, pageWidth, lineHeight);
 
             // Process inline images if any
             if (block.images && block.images.length > 0) {
@@ -335,24 +463,8 @@ async function generateAdvancedTextPdf() {
               }
             }
 
-            // Add clickable links if any
-            if (block.links && block.links.length > 0) {
-              for (const link of block.links) {
-                try {
-                  // Calculate approximate link position (this is simplified)
-                  const linkY = currentY;
-                  const linkX = currentX;
-                  const linkWidth = pdf.getTextWidth(link.text);
-                  const linkHeight = lineHeight;
-
-                  // Add clickable link
-                  pdf.link(linkX, linkY - linkHeight, linkWidth, linkHeight, { url: link.url });
-                } catch (error) {
-                  console.warn('Error adding link to PDF:', error);
-                }
-              }
-            }
-
+            // Calculate text height for currentY adjustment
+            const textLines = pdf.splitTextToSize(lineText, maxWidth);
             currentY += textLines.length * lineHeight + paragraphSpacing;
           }
           break;
