@@ -40,6 +40,7 @@ export const singlePdfLoadTools = [
   'add-attachments',
   'sanitize-pdf',
   'remove-restrictions',
+  'flatten-as-image'
 ];
 
 export const simpleTools = [

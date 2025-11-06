@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import tailwindcss from '@tailwindcss/vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { resolve } from 'path';
+import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ mode }) => ({
   plugins: [
@@ -12,6 +13,18 @@ export default defineConfig(({ mode }) => ({
         Buffer: true,
         global: true,
         process: true,
+      },
+    }),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.ico', 'images/favicon.png', 'images/favicon.svg', 'qpdf.wasm'],
+      manifest: require('./public/manifest.json'),
+      workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,woff,json,wasm}'],
+        navigateFallback: '/index.html',
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 5MB for large JS bundles
       },
     }),
   ],
